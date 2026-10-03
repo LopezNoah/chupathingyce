@@ -622,8 +622,8 @@ static void texture_cache_initialize_hardware_format(
 			(2 << D3DFORMAT_DIMENSION_SHIFT) |
 			D3DFORMAT_BORDERSOURCE_COLOR |
 			D3DFORMAT_DMACHANNEL_A;
-		/* port: (the pitch in whole steps, a Halo PC map's rounded up:
-		texture_cache_bitmap_valid) */
+		/* port: the pitch in whole steps, rounded up for Halo PC maps too:
+		texture_cache_bitmap_valid */
 		texture->Size =
 			(((bitmap_mipmap_get_row_pitch(bitmap, 0) + D3DTEXTURE_PITCH_ALIGNMENT - 1) / D3DTEXTURE_PITCH_ALIGNMENT - 1) <<
 				D3DSIZE_PITCH_SHIFT) |

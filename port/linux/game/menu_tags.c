@@ -373,6 +373,7 @@ static char const *const port_function_names[] =
 	"player profile save changes",
 	/* (the server browser's password screen) */
 	"port password init", "port password edit", "port password join", "port password back",
+	"port active profile edit begin", "port active profile edit end",
 };
 
 /* the PC version's game data functions that the Xbox's have not, from
@@ -1417,7 +1418,7 @@ pausebox2 pieces), the box is the port's taller one (pause/pausebox_*:
 tools/port_settings.py), centred where the old one was; on a custom map's,
 what is below the list moves down. */
 
-#define PAUSE_SETTINGS_SCREEN "main_menu/settings_select/player_setup/player_profile_edit/player_profile_edit_screen"
+#define PAUSE_SETTINGS_SCREEN "in_game/settings_screen"
 #define PAUSE_BUTTON_SPACING 35
 #define PAUSE_BOX_FIRST_BUTTONS 3
 
@@ -1732,8 +1733,8 @@ void menu_tags_loaded(
 
 	boolean game_map = strcmp(map_name, "ui") != 0;
 
-	/* (ui.map, and a multiplayer map: its pause menu's SETTINGS) */
-	if ((game_map && tag_loaded('Soul', MULTIPLAYER_COLLECTION) == NONE) || !menus_pc_chosen())
+	/* (ui.map, and a game's in-game settings screens) */
+	if (!menus_pc_chosen())
 	{
 		return;
 	}

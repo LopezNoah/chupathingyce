@@ -3976,6 +3976,13 @@ static void widget_instance_initialize(
 	screen, which would) */
 	widget->pause_game_time = TEST_FLAG(definition->flags, _widget_pause_game_time_bit) &&
 		!network_coop_active();
+	/* Port settings screens do not pause any active network game; co-op has
+	its own pause behavior above, while other network modes also keep running. */
+	if (widget->pause_game_time && pc_menu_tag(tag_index) &&
+		!we_are_at_the_main_menu && network_game_is_active())
+	{
+		widget->pause_game_time = FALSE;
+	}
 	widget->creation_time = widget_globals.current_system_milliseconds;
 	widget->milliseconds_to_auto_close = MAX(definition->milliseconds_to_auto_close, 0);
 	widget->auto_close_fade_time = MAX(definition->auto_close_fade_time, 0);

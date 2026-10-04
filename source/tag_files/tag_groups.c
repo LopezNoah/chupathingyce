@@ -162,16 +162,23 @@ void *tag_block_get_element_with_size(
 	match_assert("c:\\halo\\SOURCE\\tag_files\\tag_groups.c", 3086, !block->definition || block->definition->element_size==element_size);
 #endif
 
-	match_vassert("c:\\halo\\SOURCE\\tag_files\\tag_groups.c", 3089, index>=0 && index<block->count,
-		csprintf(temporary,
-			"#%d is not a valid %s index in [#0,#%d)",
-			index,
-#ifdef HALO_64BIT
-			"<unknown>", block->count));
-#else
-			block->definition ? block->definition->name : "<unknown>", block->count));
+	/* port: a Custom Edition map's index past a block's end gets the empty
+	data below; Halo PC did not assert on it. Preserve checks for our maps. */
+#ifdef HALO_CUSTOM_EDITION
+	if (!cache_file_is_ce)
 #endif
-	match_assert("c:\\halo\\SOURCE\\tag_files\\tag_groups.c", 3090, block->address);
+	{
+		match_vassert("c:\\halo\\SOURCE\\tag_files\\tag_groups.c", 3089, index>=0 && index<block->count,
+			csprintf(temporary,
+				"#%d is not a valid %s index in [#0,#%d)",
+				index,
+#ifdef HALO_64BIT
+				"<unknown>", block->count));
+#else
+				block->definition ? block->definition->name : "<unknown>", block->count));
+#endif
+		match_assert("c:\\halo\\SOURCE\\tag_files\\tag_groups.c", 3090, block->address);
+	}
 	/* port: an element past the block (an index a map's data gave, which
 	nothing checked) is the empty data (tag_empty_data), not whatever lies
 	past the block */

@@ -145,6 +145,7 @@ jobs:
         run: |
           python -m pytest -q tools/test_linux_port.py tools/test_touch_menu.py tools/test_server_control.py tools/test_delta.py tools/test_delta_peer.py
           python tools/test_light_storage.py
+          python tools/test_console_escape.py
 
       - name: Compile cache
         run: ccache --show-stats
@@ -439,6 +440,9 @@ jobs:
 
       - name: Test light storage
         run: python tools/test_light_storage.py
+
+      - name: Test console Escape ownership
+        run: python tools/test_console_escape.py
 
       - name: Compile cache
         run: ccache --show-stats

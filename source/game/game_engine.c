@@ -3777,6 +3777,7 @@ void game_engine_dispose(
 
 		game_engine = NULL;
 	}
+	halo_extensions_end_game_session();
 
 	return;
 }
@@ -3879,6 +3880,7 @@ void game_engine_dispose_from_old_map(
 {
 	if (game_engine && game_engine->dispose_from_old_map)
 		game_engine->dispose_from_old_map();
+	halo_extensions_end_game_session();
 
 	return;
 }
@@ -7003,6 +7005,8 @@ static void game_engine_predict_resources(
 void game_engine_initialize(
 	struct game_variant *variant)
 {
+	/* Clear an earlier owner even when this variant has no game engine. */
+	halo_extensions_end_game_session();
 	csmemset(&game_engine_globals, 0, sizeof(game_engine_globals));
 	game_engine_globals.postgame_state = game_engine_mode_active;
 

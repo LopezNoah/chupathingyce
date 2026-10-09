@@ -78,6 +78,11 @@ static struct halo_extension const *const extensions[] =
 
 #define EXTENSION_COUNT ((long)NUMBEROF(extensions) - 1)
 
+static struct halo_ruleset const *session_ruleset;
+static struct halo_editor const *editor_owner;
+/* Retain the released editor so its per-player camera reset can be drained. */
+static struct halo_editor const *released_editor;
+
 /* each extension, as e; and each with the part, as e and part */
 #define EACH_EXTENSION(e) \
 	long extension_index; \
@@ -123,12 +128,23 @@ void halo_extensions_main_frame_update(boolean main_menu_loaded, real seconds)
 
 struct game_engine *halo_extensions_select_game_engine(struct game_engine *original, struct game_variant *variant)
 {
-	struct game_engine *engine = original;
-
+	halo_extensions_end_game_session();
+	if (!original || !variant)
+		return original;
 	{
-		EACH_EXTENSION(e) if (e->select_game_engine) engine = e->select_game_engine(engine, variant);
+		EACH_PART(e, ruleset)
+		{
+			struct game_engine *selected = original;
+
+			if (e->ruleset->select_game_engine &&
+				e->ruleset->select_game_engine(original, variant, &selected) && selected)
+			{
+				session_ruleset = e->ruleset;
+				return selected;
+			}
+		}
 	}
-	return engine;
+	return original;
 }
 
 boolean halo_extensions_suppress_game_report(void)
@@ -139,12 +155,14 @@ boolean halo_extensions_suppress_game_report(void)
 
 /* ---------- rulesets */
 
+void halo_extensions_end_game_session(void)
+{
+	session_ruleset = NULL;
+}
+
 struct halo_ruleset const *halo_extensions_active_ruleset(void)
 {
-	EACH_PART(e, ruleset)
-		if (e->ruleset->active && e->ruleset->active())
-			return e->ruleset;
-	return NULL;
+	return session_ruleset;
 }
 
 void halo_extensions_filter_player_action(long player_index, struct player_action *action)
@@ -260,12 +278,30 @@ static boolean editor_is_active(struct halo_editor const *editor)
 	return editor->active && editor->active();
 }
 
+/* Keep an existing owner, even if a higher-priority editor activates.
+ * Only after release may the first active editor claim the tool interface. */
+static struct halo_editor const *active_editor(void)
+{
+	if (editor_owner && !editor_is_active(editor_owner))
+	{
+		released_editor = editor_owner;
+		editor_owner = NULL;
+	}
+	if (!editor_owner)
+	{
+		EACH_PART(e, editor)
+			if (editor_is_active(e->editor))
+			{
+				editor_owner = e->editor;
+				break;
+			}
+	}
+	return editor_owner;
+}
+
 boolean halo_extensions_editor_active(void)
 {
-	EACH_PART(e, editor)
-		if (editor_is_active(e->editor))
-			return TRUE;
-	return FALSE;
+	return active_editor() != NULL;
 }
 
 int halo_extensions_input_captured(void)
@@ -275,40 +311,70 @@ int halo_extensions_input_captured(void)
 
 void halo_extensions_editor_update(real seconds)
 {
-	EACH_PART(e, editor)
-		if (e->editor->update)
-			e->editor->update(seconds);
+	struct halo_editor const *owner = active_editor();
+
+	if (owner)
+	{
+		if (owner->update)
+			owner->update(seconds);
+		/* Do not poll another editor during the frame the owner closes. */
+		if (!editor_is_active(owner))
+		{
+			released_editor = owner;
+			editor_owner = NULL;
+		}
+		return;
+	}
+	/* Existing editors (Forge) detect their activation key in update(). */
+	{
+		EACH_PART(e, editor)
+		{
+			if (e->editor->update)
+				e->editor->update(seconds);
+			if (editor_is_active(e->editor))
+			{
+				editor_owner = e->editor;
+				break;
+			}
+		}
+	}
 }
 
 boolean halo_extensions_editor_director_camera(short local_player_index, void **camera_proc, boolean *reset)
 {
-	boolean any_reset = FALSE;
+	struct halo_editor const *owner = active_editor();
+	boolean handled = FALSE;
 
 	*camera_proc = NULL;
+	*reset = FALSE;
+	if (released_editor && released_editor != owner && released_editor->director_camera)
 	{
-		/* every editor is asked (each has its one-shot reset to give), the
-		first with the view keeps it */
-		EACH_PART(e, editor)
-		{
-			void *proc = NULL;
-			boolean editor_reset = FALSE;
-
-			if (!e->editor->director_camera)
-				continue;
-			if (e->editor->director_camera(local_player_index, &proc, &editor_reset) && !*camera_proc)
-				*camera_proc = proc;
-			any_reset |= editor_reset;
-		}
+		void *discarded = NULL;
+		released_editor->director_camera(local_player_index, &discarded, reset);
 	}
-	*reset = *camera_proc ? FALSE : any_reset;
-	return *camera_proc != NULL;
+	if (owner && owner->director_camera)
+	{
+		boolean owner_reset = FALSE;
+		handled = owner->director_camera(local_player_index, camera_proc, &owner_reset);
+		*reset |= owner_reset;
+	}
+	if (handled && *camera_proc)
+	{
+		*reset = FALSE;
+		return TRUE;
+	}
+	*camera_proc = NULL;
+	return FALSE;
 }
 
 void halo_extensions_editor_initialize_for_new_map(void)
 {
-	EACH_PART(e, editor)
-		if (e->editor->initialize_for_new_map)
-			e->editor->initialize_for_new_map();
+	editor_owner = released_editor = NULL;
+	{
+		EACH_PART(e, editor)
+			if (e->editor->initialize_for_new_map)
+				e->editor->initialize_for_new_map();
+	}
 }
 
 void halo_extensions_editor_dispose_from_old_map(void)
@@ -316,6 +382,7 @@ void halo_extensions_editor_dispose_from_old_map(void)
 	EACH_PART(e, editor)
 		if (e->editor->dispose_from_old_map)
 			e->editor->dispose_from_old_map();
+	editor_owner = released_editor = NULL;
 }
 
 void halo_extensions_object_placed_from_scenario(long object_index, struct scenario_object_datum *scenario_object)
@@ -334,9 +401,10 @@ void halo_extensions_structure_bsp_reconnected(void)
 
 void halo_extensions_editor_render(void)
 {
-	EACH_PART(e, editor)
-		if (e->editor->render)
-			e->editor->render();
+	struct halo_editor const *owner = active_editor();
+
+	if (owner && owner->render)
+		owner->render();
 }
 
 uint64_t halo_extensions_world_edit_revision(void)

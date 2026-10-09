@@ -82,16 +82,29 @@ for the manifest schema and validation.
 
 - Notifications run in ascending manifest `order`, then name. Forge remains
   before bots for map object placement, preserving the existing sequence.
-- The first ruleset whose `active()` returns true owns gameplay. Its provided
-  callbacks replace the original handling; missing callbacks fall through.
-  Ruleset `local_only` prevents both reading and writing engine network state.
-  Runtime admission checks still belong to the ruleset's engine-selection code.
+- During engine initialization, ruleset selectors are tried in registry order
+  against the same original engine and cleaned variant. A selector returns
+  `TRUE` and supplies a non-NULL engine to claim the session, or `FALSE` without
+  changing state to decline. Acceptance stops selection immediately; it may
+  retain the original engine pointer. The selected ruleset owns callbacks until
+  engine/map disposal or the next initialization: runtime predicates cannot
+  switch ownership mid-session. Missing callbacks fall through to the engine.
+  `local_only` blocks reading and writing network state for the owned session.
+  Infection's selector still enforces local-only Slayer admission.
 - Controllers update before player actions. Their ownership query identifies
   program-controlled players; it does not change network authority.
-- Editors update at the original pre-director point. Camera callbacks supply
-  the winning camera and a one-shot reset after release. Camera claims use
-  registry priority; reset requests from other editors cannot dislodge an owner.
-  Any active editor captures platform input and bypasses snapshot interpolation.
+- Editors update at the original pre-director point. When idle, their update
+  callbacks may poll activation in registry order; polling stops immediately
+  when one opens. An inactive callback must not edit unless it activates itself.
+  Once claimed, only the owner updates and renders; a later activation, even of
+  a higher-priority editor, cannot steal ownership. Input capture, interpolation
+  bypass and camera selection use that same owner. Closing ends that frame's
+  update without polling another editor. The released editor's camera callback
+  remains available to drain its per-player one-shot resets, but cannot claim
+  the camera; a new owner's camera suppresses old reset requests. Lifecycle,
+  object/BSP notifications and revision queries still reach every editor so
+  persistent map edits and derived-state invalidation remain intact. Map
+  initialization/disposal clears interactive ownership.
 - Any extension may veto ordinary game reporting; bots retain their map-wide
   “had bots” check for the browser report and event log.
 - Descriptors are constant and callbacks execute on the game thread. This is a
@@ -116,6 +129,7 @@ python3 tools/test_infection_rules.py
 
 The feature tests cover manifest/drop-in selection, disabled-source removal,
 dispatcher precedence and fallthrough, network/reporting suppression, controller
-ownership, editor capture/reset, and parsing generated defaults with shared
+ownership, session-stable ruleset selection, exclusive editor updates/rendering,
+priority and handoff, per-player camera resets, and parsing defaults with shared
 feature settings sections. They do not replace in-game lifecycle, bot or Forge
 acceptance testing with map assets.

@@ -11,7 +11,8 @@ An extension is made of optional parts, each with its own contract:
 - general hooks (struct halo_extension): notifications, called for every
   extension in registry order; and suppressions, where any TRUE wins.
 - a ruleset (struct halo_ruleset): custom game rules. At most one ruleset
-  owns the game at a time, the first registered whose active() is TRUE.
+  owns the session: the first registered whose selector accepts its engine
+  and variant. Ownership stays fixed until engine disposal or initialization.
   While it does, each hook it provides replaces the engine's own handling
   of that operation outright; a NULL hook keeps the engine's.
 - a player controller (struct halo_player_controller): players this
@@ -19,7 +20,9 @@ An extension is made of optional parts, each with its own contract:
   update in registry order, before the players' actions are taken.
 - an editor (struct halo_editor): a tool that, while active(), takes the
   local input and the director's camera. Of several, the first registered
-  that is active owns the camera; any active editor captures input.
+  that is active owns updates, rendering, input and camera exclusively.
+  Ownership stays with it until it closes. While idle, update callbacks may
+  poll for activation in registry order; polling stops at the first claim.
 
 Every member but name may be NULL (fields left out of a designated
 initializer are). Hooks run on the game thread.
@@ -42,9 +45,13 @@ union real_rgb_color;
 
 struct halo_ruleset
 {
-	/* whether these rules own the current game */
-	boolean (*active)(void);
-	/* TRUE: while active, the game engine's state is never sent to or read
+	/* Called only during engine initialization, in registry order. TRUE
+	claims the session and supplies a non-NULL engine in *selected (which
+	may be original). FALSE declines, without changing engine/variant or
+	activating rules. Later selectors are never called after acceptance. */
+	boolean (*select_game_engine)(struct game_engine *original, struct game_variant *variant,
+		struct game_engine **selected);
+	/* TRUE: while owned, the game engine's state is never sent to or read
 	from other machines (a local-only experimental mode is never mistaken
 	for the variant it is built on) */
 	boolean local_only;
@@ -84,7 +91,9 @@ struct halo_editor
 {
 	/* whether the editor is open: it owns the local input and camera */
 	boolean (*active)(void);
-	/* main.c: every frame, paused or not, before the director */
+	/* main.c: every frame, paused or not, before the director. Only the
+	owner runs while an editor is open. Idle editors may poll for activation;
+	an inactive callback must not edit the world unless it activates itself. */
 	void (*update)(real seconds);
 	/* director.c: TRUE and the camera's proc while the editor has the view;
 	*reset TRUE once, the frame after it lets go, for the game's camera to
@@ -123,10 +132,6 @@ struct halo_extension
 	/* main.c: each unpaused frame, before the connection's frame starts */
 	void (*main_frame_update)(boolean main_menu_loaded, real seconds);
 
-	/* game_engine.c: the game type for a variant (a filter: each extension
-	gets the previous one's choice) */
-	struct game_engine *(*select_game_engine)(struct game_engine *original, struct game_variant *variant);
-
 	/* the game must not be reported to the game list, Delta Stats or the
 	event log (any TRUE wins) */
 	boolean (*suppress_game_report)(void);
@@ -149,6 +154,9 @@ void halo_extensions_dispose_from_old_map(void);
 void halo_extensions_invalidate_derived_state(void);
 void halo_extensions_main_frame_update(boolean main_menu_loaded, real seconds);
 struct game_engine *halo_extensions_select_game_engine(struct game_engine *original, struct game_variant *variant);
+/* Clear session ownership after engine cleanup, also before initialization
+ * of a non-game variant. Does not dispose the engine itself. */
+void halo_extensions_end_game_session(void);
 boolean halo_extensions_suppress_game_report(void);
 
 /* rulesets: the override calls return TRUE when the active ruleset handled

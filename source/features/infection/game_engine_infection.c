@@ -893,9 +893,16 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 /* Local Infection owns conversion and respawn, with no Slayer awards,
  * auto-balancing or suicide/betrayal penalties, while it is enabled; it is
  * never sent as ordinary Slayer (local_only). */
+static boolean infection_select_ruleset(struct game_engine *original, struct game_variant *variant,
+	struct game_engine **selected)
+{
+	*selected = infection_game_select(original, variant);
+	return *selected != original;
+}
+
 static struct halo_ruleset const infection_ruleset =
 {
-	.active = infection_game_active,
+	.select_game_engine = infection_select_ruleset,
 	.local_only = TRUE,
 	/* Host/local rules restrict all input sources, not only a pad. */
 	.filter_player_action = infection_game_filter_action,
@@ -915,8 +922,6 @@ struct halo_extension const infection_extension =
 	.name = "infection",
 	/* Optional test launcher: local split screen only, never a server. */
 	.main_frame_update = infection_game_test_update,
-	/* Selection enables the rules for local Slayer only. */
-	.select_game_engine = infection_game_select,
 	.ruleset = &infection_ruleset,
 };
 

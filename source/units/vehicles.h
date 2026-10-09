@@ -36,6 +36,8 @@ struct vehicle_runtime_datum;
 
 /* ---------- prototypes/VEHICLES.C */
 
+/* Ground control types supported by the first bot driving policy. */
+boolean vehicle_supports_bot_driver(long vehicle_index);
 void vehicle_hover(
 	long vehicle_index,
 	boolean hover);

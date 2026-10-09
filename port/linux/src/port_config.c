@@ -488,6 +488,10 @@ static const struct config_setting config_settings[] =
 		"\"no\" never does, \"ask\" asks after the next crash and writes the answer\n"
 		"here." },
 
+	{ "debug.bot_sandbox", _config_boolean, "false", "HALO_BOT_SANDBOX", _environment_set_is_true, _platform_all,
+		"Solo Team Slayer bot test fixture (requires three bots): seat the local\n"
+		"player in a parked Warthog and place teammate Bot 2 near the gunner entrance\n"
+		"once per map. The bot must approach and enter normally; off in normal play." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

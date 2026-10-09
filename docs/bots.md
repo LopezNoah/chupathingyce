@@ -15,7 +15,8 @@ for LAN or online matches**. Games bots have participated in are excluded from
 game-list/Delta Stats reporting. This is not a substitute for disabling public
 hosting/listing when running a private test.
 
-Behavior is RETREAT > FIGHT > ROAM. Bots use limited sight, target memory,
+Behavior is VEHICLE > RETREAT > SCAVENGE (safe or nearby) > FIGHT > ROAM.
+Bots use limited sight, target memory,
 reaction time, skill-dependent aim error, strafing and occasional grenades.
 Navigation searches a walkability graph built from player starting locations;
 stuck traversal links are disabled and routes replanned. It is not a navmesh.
@@ -27,9 +28,24 @@ sight or changed targets. Bots do not deliberately target teammates. There is
 **no teammate-in-the-line-of-fire or grenade blast safety policy**, so enemy-only
 targeting does not imply friendly-fire immunity.
 
-No objective play, vehicles, weapon pickups, coordinated squad tactics, or
-cross-machine replication is claimed. Objective variants are explicitly gated
-out. The map-wide navigation and combat policies still need broader testing.
+Bots scan up to 256 nearby weapon/vehicle objects once per second. They seek
+usable non-duplicate weapons for empty slots or clear upgrades over their current
+weapon, then use Halo's normal inventory interaction. A nearby upgrade can take
+priority during combat; distant scavenging does not. Better carried weapons are
+selected automatically. Utility is a coarse damage/rate estimate, not a complete
+range-aware loadout strategy.
+
+Bots seek empty seats in parked ground vehicles, never evict occupants, and
+prefer the gunner when a friendly driver is present, then a driver seat, then a
+passenger seat. Aircraft are excluded. Drivers use reduced throttle and basic
+steering; gunners aim/fire through normal unit control. Stuck/overturned drivers
+and stranded passengers attempt to exit. There is no vehicle navigation mesh,
+advanced driving, collision avoidance or tactical crew coordination yet.
+
+No objective play, coordinated squad tactics, or cross-machine replication is
+claimed. Objective variants are explicitly gated out. The map-wide navigation,
+vehicle and combat policies still need broader testing. Normal spawn selection
+remains Halo's own; teammate-proximate spawning is not forced.
 
 ## Configuration and visible private demo
 
@@ -61,6 +77,21 @@ Use `host:bloodgulch:slayer` for FFA. Leave `HALO_HIDDEN_WINDOW` and
 `HALO_NULL_RENDERER` unset for visible play. `HALO_EXIT_AFTER=95` optionally adds
 a timed exit; its clock starts when the window opens, not when gameplay begins.
 
+### Optional controlled gunner test (not normal spawning)
+
+Add `HALO_BOT_SANDBOX=1` to the Team Slayer command with three bots. Once per
+map, this **debug-only fixture** puts the host in a parked Warthog's driver seat
+and positions teammate Bot 2 near the gunner entrance. Bot 2 must still approach,
+select the gunner seat and enter through normal interaction. Keep the Warthog
+stopped while it boards. The teleport is intentionally visible and is not a
+same-side/team spawn preference. Leave the variable unset for normal games;
+`debug.bot_sandbox` defaults to false.
+
+For a controlled weapon pickup test, instead add
+`HALO_NETWORK_TEST_PICKUP=5 HALO_NETWORK_TEST_PICKUP_WEAPON=sniper` without the
+sandbox variable. This existing network-test fixture positions the last player
+on a ground sniper rifle; the normal bot/pickup pipeline must acquire it.
+
 `tools/system_link_bots.py` is a different protocol/load-test utility: it joins
 remote stand-in machines that mostly stand still. It is not this gameplay AI.
 
@@ -88,6 +119,23 @@ The checker requires this one-human/three-bot fixture, balanced teams, at least
 30 game seconds, enemy-only target samples and a bot kill without friendly-fire
 kills. It cannot verify every tick, charged projectiles or correct team totals.
 
+Additional visible smoke tests for weapon/vehicle support:
+
+- Controlled gunner fixture: Bot 2 sought the host's Warthog and entered seat 2
+  through the normal interaction path; later status showed vehicle behavior.
+- Pickup fixture: Bot 3 acquired the ground sniper rifle into inventory slot 1;
+  Bot 1 also gained a second weapon. Bots 1 and 2 independently entered ground
+  vehicles as drivers. This proves acquisition/entry, not good driving or turret
+  accuracy. The initial sandbox orientation assertion was fixed by preserving
+  biped orientation during position-only test teleports.
+
+Validate the corresponding logs with:
+
+```sh
+python3 tools/check_bot_opportunity_log.py gunner /path/to/gunner.log
+python3 tools/check_bot_opportunity_log.py weapon /path/to/pickup.log
+```
+
 Known follow-ups:
 
 - Instrument actual charge/release/projectile events; helper tests do not prove
@@ -95,8 +143,8 @@ Known follow-ups:
 - Investigate a reported brief movement/jump interruption under two-bot fire.
   One FFA log sample shows Halo's stunned-movement state while the human was
   badly hurt, but that is not a confirmed reproduction or a fix.
-- Longer Team Slayer lifecycle/endgame tests, other maps, grenade safety and
-  supported non-macOS native builds.
+- Longer Team Slayer lifecycle/endgame tests, other maps, grenade safety,
+  vehicle obstacle avoidance/turret combat, and supported non-macOS builds.
 
 See [reusable primitive documentation](../source/engine_ai/README.md) for test
 commands and ownership/bounds contracts.

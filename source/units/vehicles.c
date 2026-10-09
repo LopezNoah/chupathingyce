@@ -223,6 +223,16 @@ struct vehicle_definition
 	struct tag_reference effect;
 };
 
+boolean vehicle_supports_bot_driver(long vehicle_index)
+{
+	struct unit_datum *vehicle = vehicle_get(vehicle_index);
+	struct vehicle_definition *definition = vehicle_specific_definition_get(vehicle->definition_index);
+
+	return definition->vehicle_type == _vehicle_type_human_tank ||
+		definition->vehicle_type == _vehicle_type_human_jeep ||
+		definition->vehicle_type == _vehicle_type_alien_scout;
+}
+
 struct game_globals_falling_damage
 {
 	byte unused0[0x2c];

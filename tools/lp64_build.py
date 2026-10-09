@@ -102,6 +102,7 @@ def lp64_game_flags(host_flags: list[str]) -> list[str]:
         *(flag for flag in LINUX_GAME_FLAGS if flag not in ("-w", "-Wno-error=int-conversion",
                                                            "-Wno-error=implicit-function-declaration")),
         *host_flags,
+        "-DHALO_TRACE_ENABLED",
         "-ferror-limit=0",
         # -w would also hide the errors below
         "-Wno-everything",
@@ -344,6 +345,9 @@ class Lp64Build:
         # 64-bit tree
         for source in generated_sources:
             add(source, platform_cflags)
+        # Shared trace implementation has no game/XDK ABI dependencies.
+        for source in (Path("engine/core/trace/trace.c"), Path("engine/core/trace/trace_capture.c")):
+            add(source, posix_cflags, native=True)
         # the host's own platform units, with its ABI
         for source in host.host_sources:
             if source.as_posix() not in excluded:

@@ -38,6 +38,7 @@ Xbox kernel does.
 */
 
 #include "platform.h"
+#include "halo_trace.h"
 
 #include <errno.h>
 #include <string.h>
@@ -372,6 +373,7 @@ void *platform_contiguous_alloc(unsigned long size, unsigned long alignment,
 		reprotect_host_pages(address, count * PAGE_SIZE_BYTES);
 #endif
 	pthread_mutex_unlock(&arena_lock);
+	halo_trace_memory_reserve(HALO_TRACE_MEMORY_GAME, (uint64_t)count * PAGE_SIZE_BYTES);
 	return address;
 }
 
@@ -402,6 +404,8 @@ void platform_contiguous_free(void *address)
 		reprotect_host_pages(address, count * PAGE_SIZE_BYTES);
 	}
 	pthread_mutex_unlock(&arena_lock);
+	if (count)
+		halo_trace_memory_release(HALO_TRACE_MEMORY_GAME, (uint64_t)count * PAGE_SIZE_BYTES);
 }
 
 /* Write into contiguous memory the way the Xbox's DVD and hard disk do:

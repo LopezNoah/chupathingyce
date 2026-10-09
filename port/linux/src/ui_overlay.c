@@ -18,6 +18,7 @@ atlas texture as they are first drawn at a size, and drawn as quads too.
 #include "xgpu.h"
 #include "ui_font.h"
 #include "ui_overlay.h"
+#include "halo_trace.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -768,6 +769,7 @@ void ui_overlay_present(int x, int y, int width, int height, int window_width, i
 	glBindBuffer(GL_ARRAY_BUFFER, overlay.vertex_buffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(overlay.vertices), NULL, GL_STREAM_DRAW);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)count * (GLsizeiptr)sizeof(struct vertex), overlay.vertices);
+	halo_trace_draw_call();
 	glDrawArrays(GL_TRIANGLES, 0, count);
 
 	glBindVertexArray((GLuint)saved_vertex_array);

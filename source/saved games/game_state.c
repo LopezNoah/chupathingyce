@@ -94,6 +94,10 @@ symbols in this file:
 
 /* ---------- headers */
 
+#ifdef HALO_TRACE_ENABLED
+#include "../../port/linux/src/halo_trace.h"
+#endif
+
 #include "cseries.h"
 #include "cseries_windows.h"
 #include "cseries/errors.h"
@@ -559,6 +563,9 @@ void *game_state_malloc(
 	game_state_globals.cpu_allocation_size+= size;
 
 	crc_checksum_buffer((unsigned long *)&game_state_globals.allocation_size_checksum, &size, sizeof(size));
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_allocation();
+#endif
 
 	return pointer;
 }
@@ -580,6 +587,9 @@ void *game_state_gpu_malloc(
 	pointer = (byte *)game_state_globals.base_address-game_state_globals.gpu_allocation_size+GAME_STATE_SIZE;
 
 	crc_checksum_buffer((unsigned long *)&game_state_globals.allocation_size_checksum, &size, sizeof(size));
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_allocation();
+#endif
 
 	return pointer;
 }

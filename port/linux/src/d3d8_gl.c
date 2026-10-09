@@ -25,6 +25,7 @@ Conventions carried over from the Xbox:
 #include "sdl_platform.h"
 #include "halo_ui_pointer.h"
 #include "port_config.h"
+#include "halo_trace.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -4521,12 +4522,14 @@ void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_v
 		unsigned long count;
 		WORD *indices = quad_indices(NULL, vertex_count, &count);
 
+		halo_trace_draw_call();
 		glDrawElements(GL_TRIANGLES, (GLsizei)count, GL_UNSIGNED_SHORT,
 			(const void *)(uintptr_t)index_upload(indices, count * sizeof(WORD)));
 		free(indices);
 	}
 	else
 	{
+		halo_trace_draw_call();
 		glDrawArrays(primitive_mode(primitive_type), 0, (GLsizei)vertex_count);
 	}
 	gl_check_errors("draw");
@@ -4556,6 +4559,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	{
 		/* the attributes start at vertex minimum */
 		state_element_array_buffer(index_buffer);
+		halo_trace_draw_call();
 		glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)vertex_count, GL_UNSIGNED_SHORT,
 			(const void *)(uintptr_t)index_offset, -(GLint)minimum);
 		return;
@@ -4575,6 +4579,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 
 		for (index = 0; index < count; index++)
 			rebased[index] = (WORD)(source[index] - minimum);
+		halo_trace_draw_call();
 		glDrawElements(primitive_mode(primitive_type), (GLsizei)count, GL_UNSIGNED_SHORT,
 			(const void *)index_upload(rebased, count * sizeof(WORD)));
 		free(rebased);
@@ -4583,6 +4588,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	}
 #endif
 	(void)index;
+	halo_trace_draw_call();
 	glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)count, GL_UNSIGNED_SHORT,
 		(const void *)(uintptr_t)index_upload(source, count * sizeof(WORD)), -(GLint)minimum);
 	free(indices);
@@ -4651,12 +4657,14 @@ void WINAPI D3DDevice_End(void)
 		unsigned long index_count;
 		WORD *indices = quad_indices(NULL, count, &index_count);
 
+		halo_trace_draw_call();
 		glDrawElements(GL_TRIANGLES, (GLsizei)index_count, GL_UNSIGNED_SHORT,
 			(const void *)(uintptr_t)index_upload(indices, index_count * sizeof(WORD)));
 		free(indices);
 	}
 	else
 	{
+		halo_trace_draw_call();
 		glDrawArrays(primitive_mode(type), 0, (GLsizei)count);
 	}
 	gl_check_errors("immediate draw");
@@ -4906,6 +4914,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	if (screenshot_every < 0)
 		screenshot_every = config_integer("debug.screenshot_every");
 
+	halo_trace_frame_begin((uint64_t)device.frame + 1u);
 	if (device.gl_ready)
 	{
 		struct render_target_entry *back_buffer = render_target_get(&device.back_buffer);
@@ -5016,6 +5025,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		pending_flips++;
 	}
 	pthread_mutex_unlock(&vertical_blank_lock);
+	halo_trace_frame_end((uint64_t)device.frame);
 }
 
 HRESULT WINAPI D3DDevice_PersistDisplay(void)

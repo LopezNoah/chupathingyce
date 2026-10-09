@@ -21,6 +21,7 @@ anti_aliasing_values).
 */
 
 #include "xgpu.h"
+#include "halo_trace.h"
 
 #include <stdlib.h>
 
@@ -411,6 +412,7 @@ static void pass_draw(int which, GLuint framebuffer, const GLint corners[4], BOO
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, color_only ? GL_FALSE : GL_TRUE);
 	glUseProgram(post.programs[which]);
 	glUniform4fv(post.metrics[which], 1, metrics);
+	halo_trace_draw_call();
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 

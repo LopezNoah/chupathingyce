@@ -19,6 +19,7 @@ memory_watch.c detects that by write-protecting the pages.
 #include "menu_files.h"
 #include "text_hires.h"
 #include "port_config.h"
+#include "halo_trace.h"
 
 #include <stdio.h>
 #ifdef HALO_ANDROID
@@ -606,7 +607,7 @@ static void texture_dump(GLenum target, const struct xgpu_texture_description *d
 }
 #endif
 
-static void upload(GLuint texture, GLenum target, const struct xgpu_texture_description *description,
+static BOOL upload(GLuint texture, GLenum target, const struct xgpu_texture_description *description,
 	const unsigned char *base, const D3DCOLOR *palette)
 {
 	struct format_information information = format_information(description->format);
@@ -625,8 +626,11 @@ static void upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 	{
 		platform_log("textures: no memory to convert a %lux%lux%lu texture; it is not drawn",
 			description->width, description->height, description->depth);
-		return;
+		return FALSE;
 	}
+	if (converted)
+		halo_trace_memory_reserve(HALO_TRACE_MEMORY_RENDER_CPU,
+			(uint64_t)largest * sizeof(unsigned long));
 	glBindTexture(target, texture);
 	xgpu_gl_state_invalidate();
 	/* the channel each channel is sampled from, set on every upload: a
@@ -712,7 +716,10 @@ static void upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 					platform_log("textures: no memory to convert a %lux%lux%lu texture; it is not drawn",
 						description->width, description->height, description->depth);
 					free(converted);
-					return;
+					if (converted)
+						halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_CPU,
+							(uint64_t)largest * sizeof(unsigned long));
+					return FALSE;
 				}
 				if (target == GL_TEXTURE_3D)
 					glTexImage3D(image_target, (GLint)level, GL_RGBA8, width, height, depth, 0, GL_BGRA, GL_UNSIGNED_BYTE, converted);
@@ -722,7 +729,11 @@ static void upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 		}
 	}
 	free(converted);
+	if (converted)
+		halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_CPU,
+			(uint64_t)largest * sizeof(unsigned long));
 	texture_dump(target, description);
+	return TRUE;
 }
 
 /* ---------- cache */
@@ -738,6 +749,7 @@ struct texture_entry
 	unsigned long address, size;
 	unsigned long generation;
 	unsigned long last_used_frame;
+	uint64_t estimated_gpu_bytes;
 	/* the high-res HUD texture drawn in its place (hud_hires.h), or -1 */
 	long override;
 	/* the newest generation of its pages (memory_watch_generation) as of the
@@ -767,6 +779,34 @@ static struct
 } recent_textures[RECENT_TEXTURE_COUNT];
 static unsigned long texture_drop_serial = 1;
 static unsigned long texture_frame = 0;
+static uint64_t texture_gpu_bytes_current;
+
+static uint64_t texture_gpu_size_estimate(const struct xgpu_texture_description *description)
+{
+	uint64_t total = 0;
+	uint64_t faces = description->cube_map ? 6u : 1u;
+	unsigned long level;
+	BOOL gpu_compressed = description->compressed;
+
+#ifdef HALO_ANDROID
+	if (!xgpu_capabilities.s3tc)
+		gpu_compressed = FALSE;
+#endif
+	for (level = 0; level < description->levels; level++)
+	{
+		uint64_t bytes;
+		if (gpu_compressed)
+			bytes = level_bytes(description, level);
+		else
+			bytes = (uint64_t)level_dimension(description->width, level) *
+				level_dimension(description->height, level) *
+				level_dimension(description->depth, level) * 4u;
+		if (bytes > (UINT64_MAX - total) / faces)
+			return UINT64_MAX;
+		total += bytes * faces;
+	}
+	return total;
+}
 
 /* (every bit of the three mixed into the top ones: textures are aligned,
 and few sizes and formats are common) */
@@ -862,6 +902,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		if (recent_textures[recent].watch_serial == watch_serial)
 		{
 			entry->last_used_frame = texture_frame;
+			halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_HITS, 1);
 			return texture_entry_result(entry, target, description);
 		}
 	}
@@ -880,6 +921,10 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 			}
 		}
 	}
+	if (entry)
+		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_HITS, 1);
+	else
+		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_MISSES, 1);
 	if (!entry && variant_count >= MAXIMUM_PALETTE_VARIANTS)
 	{
 		/* a palette that keeps changing reuses the stalest copy */
@@ -896,6 +941,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 			*target = GL_TEXTURE_2D;
 			return 0;
 		}
+		halo_trace_memory_reserve(HALO_TRACE_MEMORY_RENDER_CPU, sizeof(*entry));
 		entry->data = data;
 		entry->format_word = format_word;
 		entry->size_word = size_word;
@@ -988,7 +1034,22 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 					entry->description.height, entry->size, entry->generation,
 					ones * 100 / entry->size, zeros * 100 / entry->size);
 			}
-			upload(entry->texture, entry->target, &entry->description, (const unsigned char *)xbox_pointer(entry->address), palette);
+			if (upload(entry->texture, entry->target, &entry->description,
+				(const unsigned char *)xbox_pointer(entry->address), palette))
+			{
+				uint64_t const gpu_bytes = texture_gpu_size_estimate(&entry->description);
+				halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_UPLOADS, 1);
+				if (!entry->estimated_gpu_bytes && gpu_bytes != UINT64_MAX &&
+					gpu_bytes <= UINT64_MAX - texture_gpu_bytes_current)
+				{
+					entry->estimated_gpu_bytes = gpu_bytes;
+					texture_gpu_bytes_current += gpu_bytes;
+					halo_trace_memory_reserve(HALO_TRACE_MEMORY_RENDER_GPU, gpu_bytes);
+					if (texture_gpu_bytes_current <= (uint64_t)INT64_MAX)
+						halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
+							(int64_t)texture_gpu_bytes_current);
+				}
+			}
 		}
 	}
 	entry->last_used_frame = texture_frame;
@@ -1026,6 +1087,15 @@ void xgpu_texture_cache_begin_frame(void)
 				glDeleteTextures(1, &entry->texture);
 				xgpu_gl_state_invalidate();
 				texture_drop_serial++;
+				if (entry->estimated_gpu_bytes)
+				{
+					halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_GPU, entry->estimated_gpu_bytes);
+					texture_gpu_bytes_current -= entry->estimated_gpu_bytes;
+					halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
+						(int64_t)texture_gpu_bytes_current);
+				}
+				halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_EVICTIONS, 1);
+				halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_CPU, sizeof(*entry));
 				free(entry);
 			}
 			else

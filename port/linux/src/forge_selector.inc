@@ -146,6 +146,7 @@ int platform_forge_selector_draw(const char *cross, const char *bar, int selecte
     glBindSampler(0, 0);
     glBindTexture(GL_TEXTURE_2D, forge_selector.images[index].texture);
     glBindVertexArray(forge_selector.vao);
+    halo_trace_draw_call();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     drawn = 1;
 restore:

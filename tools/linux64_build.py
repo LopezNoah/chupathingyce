@@ -11,7 +11,7 @@ with a profile (the committed profiles are the 32-bit builds').
 """
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from .embed_assets import hud_assets_build, hud_configure_inputs, ui_fonts_build
 from .linux_build import OPTIMISATION, lto_flags, march_flag
@@ -47,7 +47,7 @@ LINUX64_POSIX_FLAGS = [
 ]
 
 
-def linux64_configure_inputs() -> List[Path]:
+def linux64_configure_inputs() -> list[Path]:
     """Files whose change must re-run configure.py."""
     if not LINUX_PORT_CONFIG.is_file():
         return [Path(__file__)]

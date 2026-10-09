@@ -327,8 +327,8 @@ def linux_configure_inputs() -> list[Path]:
     # (the folders of the game's sources, so that adding or removing one
     # re-runs it)
     game_folders = sorted({source.parent for source in game_sources(_load_port_config())})
-    return [PORT_CONFIG, Path(__file__), PORT_DIR / "src", PORT_DIR / "game", XDK_INCLUDE, *game_folders,
-            *hud_configure_inputs()]
+    return [PORT_CONFIG, Path(__file__), PORT_DIR / "src", PORT_DIR / "game", XDK_INCLUDE,
+            Path("engine/core"), *game_folders, *hud_configure_inputs()]
 
 
 def _quote(path: Any) -> str:
@@ -468,6 +468,10 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
             add_object(source, f"{platform_cflags} {updater_defines(getattr(sln, 'port_release', False))}")
         else:
             add_object(source, platform_cflags)
+    # Shared trace implementation, compiled with the same ABI as its Linux-port
+    # caller. The files live under engine/core/trace and are also unit-tested.
+    for source in (Path("engine/core/trace/trace.c"), Path("engine/core/trace/trace_capture.c")):
+        add_object(source, posix_cflags, posix=True)
     # (the dedicated server's own: tools/server_build.py)
     for source in units.platform_sources:
         add_object(source, f"{platform_cflags} {updater_defines(getattr(sln, 'port_release', False))}")

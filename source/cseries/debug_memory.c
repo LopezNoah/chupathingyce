@@ -96,6 +96,10 @@ symbols in this file:
 
 /* ---------- headers */
 
+#ifdef HALO_TRACE_ENABLED
+#include "../../port/linux/src/halo_trace.h"
+#endif
+
 #include "cseries.h"
 #include "cseries_windows.h"
 #include "errors.h"
@@ -482,6 +486,9 @@ void *debug_malloc(
 		debug_memory_add_pointer(header);
 
 		pointer = header + 1;
+#ifdef HALO_TRACE_ENABLED
+		halo_trace_allocation();
+#endif
 		if (clear)
 		{
 			csmemset(pointer, 0, size);
@@ -576,6 +583,9 @@ void *debug_realloc(
 		debug_memory_add_pointer(header);
 
 		result = header + 1;
+#ifdef HALO_TRACE_ENABLED
+		halo_trace_allocation();
+#endif
 		if (size > old_size)
 		{
 			debug_memory_fill_with_random(

@@ -120,6 +120,10 @@ struct game_options;
 
 #include <stdint.h>
 
+#ifdef HALO_TRACE_ENABLED
+#include "../../port/linux/src/halo_trace.h"
+#endif
+
 #include "cseries/cseries.h"
 #include "game/game.h"
 #include "ai/ai.h"
@@ -317,6 +321,9 @@ void game_tick(
 {
 	real seconds_per_tick;
 
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_game_tick_begin();
+#endif
 	profile_tick_start();
 	collision_log_begin_period(0);
 	real_math_reset_precision();
@@ -385,6 +392,9 @@ void game_tick(
 	profile_exit(game_update_section);
 	collision_log_end_period();
 	profile_tick_end();
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_game_tick_end();
+#endif
 
 	return;
 }
@@ -595,6 +605,9 @@ boolean game_is_cooperative(
 boolean game_load(
 	struct game_options *options)
 {
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_begin(HALO_TRACE_ZONE_SCENARIO_LOAD);
+#endif
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\game.c",
 		0x192,
@@ -614,6 +627,9 @@ boolean game_load(
 	{
 		game_globals->map_loaded = TRUE;
 	}
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_end(HALO_TRACE_ZONE_SCENARIO_LOAD);
+#endif
 
 	return game_globals->map_loaded;
 }
@@ -796,6 +812,9 @@ void game_precache_new_map(
 	boolean blocking)
 {
 	long map_status;
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_begin(HALO_TRACE_ZONE_MAP_PRECACHE);
+#endif
 
 	if (!cache_files_precache_map_loaded(map_name))
 	{
@@ -882,6 +901,9 @@ void game_precache_new_map(
 		if (player_spawn_count == 1)
 			player_ui_remember_player1_profile(TRUE);
 	}
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_end(HALO_TRACE_ZONE_MAP_PRECACHE);
+#endif
 
 	return;
 }

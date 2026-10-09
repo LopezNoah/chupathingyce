@@ -41,6 +41,10 @@ Configuration (port/linux/src/port_config.c): bots.count (0..3), bots.skill.
 
 /* ---------- headers */
 
+#ifdef HALO_TRACE_ENABLED
+#include "../../../port/linux/src/halo_trace.h"
+#endif
+
 #include "cseries.h"
 #include "game.h"
 #include "game_engine.h"
@@ -2382,8 +2386,14 @@ as its local players' input goes there */
 static void bots_controller_update(
 	void)
 {
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_begin(HALO_TRACE_ZONE_BOT_AI);
+#endif
 	navigation_world_update_for_players();
 	bots_update();
+#ifdef HALO_TRACE_ENABLED
+	halo_trace_zone_end(HALO_TRACE_ZONE_BOT_AI);
+#endif
 }
 
 static struct halo_player_controller const bots_controller =

@@ -205,6 +205,7 @@ int platform_mesh_draw(const char *path, const float minimum[3], const float max
         glVertexAttribPointer(attribute, attribute ? 2 : 3, GL_FLOAT, GL_FALSE, 0, NULL);
     }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, platform_mesh.buffers[2]);
+    halo_trace_draw_call();
     glDrawElements(GL_TRIANGLES, asset->index_count, GL_UNSIGNED_INT, NULL);
     drawn = 1;
 restore:

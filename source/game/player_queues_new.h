@@ -103,5 +103,11 @@ boolean update_client_distributed_input(
 	unsigned short *control_flags);
 long player_new_queue(
 	long player_index);
+/* port: (the host) a player this machine decides for without a controller, a
+bot (source/game/bots.c): its action for the next update the host builds,
+as a local player's is; FALSE if the player has no queue */
+boolean update_server_set_player_action(
+	long player_index,
+	struct player_action const *action);
 
 #endif /* __PLAYER_QUEUES_NEW_H */

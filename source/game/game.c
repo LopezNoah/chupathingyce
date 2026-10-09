@@ -185,6 +185,7 @@ struct game_options;
 #include "rasterizer/common/rasterizer_common.h"
 #endif
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
+#include "bots.h" /* port: computer-controlled players */
 #ifdef HALO_64BIT
 #include "forge.h" /* port: port/linux/game/forge.c */
 #endif
@@ -682,6 +683,8 @@ void game_initialize_for_new_map(
 	/* port: the objects Forge added to the map */
 	forge_objects_placed();
 #endif
+	/* port: no bots yet; they join once the game is under way (bots.c) */
+	bots_initialize_for_new_map();
 	if (!game_in_editor())
 		ai_place();
 	/* (the map's objects, placed as on the host: a distributed client's own

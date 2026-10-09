@@ -1141,6 +1141,24 @@ void update_server_handle_distributed_input(
 	queue->current_action = *action;
 }
 
+boolean update_server_set_player_action(
+	long player_index,
+	struct player_action const *action)
+{
+	struct update_server_queue_datum *queue;
+
+	if (!update_server_globals.initialized || player_index == NONE || !distributed_action_valid(action))
+		return FALSE;
+	queue = (struct update_server_queue_datum *)datum_try_and_get(update_server_globals.queues, player_index);
+	if (!queue)
+		return FALSE;
+	queue->current_action = *action;
+	/* (its buttons stay pressed until an update has carried them, as a
+	local player's do: update_server_next_update) */
+	update_server_pending_control_flags[DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index)] |= action->control_flags;
+	return TRUE;
+}
+
 long update_server_ticked_update_number(
 	void)
 {

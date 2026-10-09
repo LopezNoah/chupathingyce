@@ -1077,7 +1077,10 @@ void game_events_update(
 {
 	long tick;
 	boolean hosting = game_connection() == _game_connection_network_server;
-	boolean running = game_engine_running() && hosting;
+	/* (a game bots play in is not sent, source/game/bots.c: its recording
+	is dropped as a game that stopped is) */
+	boolean bots_game_had_bots(void);
+	boolean running = game_engine_running() && hosting && !bots_game_had_bots();
 
 	if (!running)
 	{

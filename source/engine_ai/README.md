@@ -1,0 +1,54 @@
+# Reusable AI primitives
+
+These bounded, caller-owned C modules were imported from `engine/main` and
+adapted for Halo's native build. They have no ECS or simulation/timeline header
+dependencies. Halo's existing campaign actor AI under `source/ai/` is unchanged.
+
+- `behavior.*`: iterative priority/sequence/leaf trees, validation, cancellation,
+  reevaluation and bounded traces (128 nodes, 16 levels).
+- `intent.*`: one actor's decision-to-execution batch, with game-owned identity,
+  tick and revision types; up to 32 requests with 64-byte copied payloads.
+  Execution validates epoch/tick/revision and consumes the batch once. Copying a
+  batch is not a safe retry mechanism. There is no global duplicate suppression.
+- `behavior_intent.*`: intent emission from behavior leaves and caller-owned RNG.
+- `navigation.*`: incremental directed-graph route search, at most 256 nodes and
+  2,048 links. Positive link costs, capability gates and revision-scoped routes.
+- `traversal.*`: route following, smart-link callbacks and reservation cleanup;
+  stale graph revisions require replanning.
+- `fire_control.*`: automatic fire, tap cadence and bounded charged-shot holds,
+  mandatory release ticks, and immediate release on lost firing intent.
+
+No heap allocation, ECS, timeline, navmesh generation, replicated bot protocol,
+objective policy or weapon selection policy is provided by these modules.
+Graph arrays must remain alive and immutable during a search; changing links
+requires a new graph revision. Snapshot/serialization is the caller's concern;
+raw structs and pointers are not a wire format.
+
+## Halo integration
+
+`source/game/bots.c` supplies perception, behavior leaves, a spawn-location
+navigation graph, weapon handling and player lifecycle. Accepted intents become
+Halo `player_action` inputs through the host queue. Native builds discover these
+C sources under `source/`; they are compiled into the macOS target.
+
+See [the bot milestone scope and test notes](../../docs/bots.md).
+
+## Tests
+
+From the repository root:
+
+```sh
+python3 tools/test_engine_ai_navigation.py --sanitize
+python3 tools/test_engine_ai_behavior.py --sanitize
+python3 tools/test_engine_ai_traversal.py --sanitize
+cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  tools/test_engine_ai_fire_control.c source/engine_ai/fire_control.c \
+  -o /tmp/test-bot-fire
+/tmp/test-bot-fire
+ninja macos
+```
+
+The behavior runner covers the available behavior/definition tests. Timeline,
+ECS, standalone intent and behavior-intent runners from the original engine
+are not present here; their former documentation references are not claims of
+coverage in this repository.

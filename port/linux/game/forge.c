@@ -93,6 +93,8 @@ int halo_forge_input_captured(void)
 /* the platform layer's (port/linux/src) */
 void platform_log(char const *format, ...);
 double config_real(char const *name);
+/* source/game/bots.c's */
+boolean bots_player_is_bot(long player_index);
 
 /* ---------- constants */
 
@@ -1605,12 +1607,16 @@ static boolean forge_may_open(
 		struct data_iterator iterator;
 		long players = 0;
 
-		/* (a player of another machine has no local player here) */
+		/* (a player of another machine has no local player here; this
+		machine's bots are no one else: source/game/bots.c) */
 		data_iterator_new(&iterator, player_data);
 		while (data_iterator_next(&iterator))
 		{
-			if (player_get(iterator.datum_index)->local_player_index == NONE)
+			if (player_get(iterator.datum_index)->local_player_index == NONE &&
+				!bots_player_is_bot(iterator.datum_index))
+			{
 				players++;
+			}
 		}
 		if (players > 0)
 		{

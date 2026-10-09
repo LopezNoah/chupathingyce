@@ -272,6 +272,16 @@ static const struct config_setting config_settings[] =
 	{ "controls.pause", _config_string, "\"Escape\"", "HALO_KEY_PAUSE", _environment_value, _platform_all,
 		"The pause menu (the controller's Start)." },
 
+	/* computer-controlled players (source/game/bots.c) */
+	{ "bots.count", _config_integer, "0", "HALO_BOTS", _environment_value, _platform_all,
+		"Computer-controlled players (0 to 3) in FFA or Team Slayer games you\n"
+		"host by yourself: a custom game nobody else is in. Bots never join a game\n"
+		"another machine is in. They play as players do, with the same weapons,\n"
+		"health and rules; experimental." },
+	{ "bots.skill", _config_string, "\"marine\"", "HALO_BOT_SKILL", _environment_value, _platform_all,
+		"How well the bots play: \"recruit\", \"marine\", \"odst\" or \"spartan\".\n"
+		"Skill changes their reactions, aim and sight, never their health or damage." },
+
 	/* Forge, the map editor in the game (port/linux/game/forge.c) */
 	{ "forge.toggle_key", _config_string, "\"F7, B\"", "HALO_FORGE_TOGGLE_KEY", _environment_value, _platform_desktop,
 		"Opens and closes Forge, the map editor, in a game on this machine (a\n"

@@ -5291,6 +5291,10 @@ static void game_engine_report_game(
 	/* (a game everyone left, the dedicated server's to end: no report) */
 	if (count == 0)
 		return;
+	/* port: nor a game bots played in (bots.c) */
+	{ boolean bots_game_had_bots(void);
+	  if (bots_game_had_bots())
+		return; }
 	game_stats_game_extra(TRUE, extra, sizeof(extra));
 	browser_report_game(
 		teams,

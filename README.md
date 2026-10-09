@@ -312,6 +312,8 @@ Useful `configure.py` options:
 | `--release` | A release build, as players get. Without it, a failed check stops the game. |
 | `--portable` | A Linux or Windows build that runs on any x86-64 computer, or a universal Mac application, to give to others. |
 | `--no-game-browser` | Leaves out the server list, stats and dedicated servers, as OpenCE's builds are. |
+| `--infection` | Builds in the experimental Infection mode ([docs/infection.md](docs/infection.md)). Off by default. |
+| `--bots` | Builds in the experimental multiplayer bots and their navigation ([docs/bots.md](docs/bots.md)). Off by default. |
 | `--pgo=off`, `--lto=off` | Faster builds, without profile-guided or link-time optimisation. |
 
 The version being made is in `VERSION`. Releases are built and published by

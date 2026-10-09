@@ -1,5 +1,13 @@
 # Solo custom-game bots: playable milestone
 
+> **Feature flag:** bots are compiled in only by `python3 configure.py --bots`,
+> and are off by default. Without the flag, `bots.c`, `navigation_world.c` and
+> `navigation_probe.c` build as no-ops: no bot can join, and the `bots.*`,
+> `debug.nav_*` and `debug.bot_sandbox` settings are not offered. Existing
+> `config.toml` entries are kept and logged as unknown. The startup log reports
+> `features: ... bots on|off`. The reusable `source/engine_ai/` library and its
+> standalone tests are unaffected.
+
 ## Supported scope
 
 Up to three computer-controlled players in **FFA Slayer or Team Slayer**, hosted

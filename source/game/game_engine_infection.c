@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef HALO_FEATURE_INFECTION
+
 const char *config_string(const char *name);
 long config_integer(const char *name);
 int config_boolean(const char *name);
@@ -884,3 +886,37 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 	platform_log("infection local: launching %s with %ld local players (no server)%s", map, players,
 		control ? " as an ordinary Slayer control" : "");
 }
+
+#else /* !HALO_FEATURE_INFECTION: configure.py --infection builds the real code */
+
+/* Infection is compiled out: every engine hook sees it inactive, selection
+ * always keeps the original engine, and the launcher never starts. */
+boolean infection_game_active(void) { return FALSE; }
+boolean infection_game_can_collect_items(long player_index) { (void)player_index; return TRUE; }
+struct game_engine *infection_game_select(struct game_engine *original, struct game_variant *variant)
+{
+	(void)variant;
+	return original;
+}
+boolean infection_game_should_spawn(long player_index) { (void)player_index; return FALSE; }
+boolean infection_game_should_end(void) { return FALSE; }
+void infection_game_end_tick(void) {}
+void infection_game_player_killed(long killer_index, long dead_index) { (void)killer_index; (void)dead_index; }
+void infection_game_filter_action(long player_index, struct player_action *action) { (void)player_index; (void)action; }
+real infection_game_damage_multiplier(long attacker_index, long victim_index)
+{
+	(void)attacker_index;
+	(void)victim_index;
+	return 1.f;
+}
+void infection_game_color(long player_index, real_rgb_color *color) { (void)player_index; (void)color; }
+boolean infection_game_message(long player_index, wchar_t *message, long count)
+{
+	(void)player_index;
+	(void)message;
+	(void)count;
+	return FALSE;
+}
+void infection_game_test_update(boolean main_menu_loaded, real seconds) { (void)main_menu_loaded; (void)seconds; }
+
+#endif /* HALO_FEATURE_INFECTION */

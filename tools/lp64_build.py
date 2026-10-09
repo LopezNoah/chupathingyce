@@ -48,6 +48,7 @@ from .linux_build import (
     compile_launcher,
     game_sources,
     game_browser_defines,
+    feature_defines,
     miniupnpc_sources,
     musl_math_sources,
     updater_defines,
@@ -247,7 +248,8 @@ class Lp64Build:
         linux_config = load_json(LINUX_PORT_CONFIG)
         excluded = host.excluded
         release = ["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []
-        abi = " ".join([*host.target_flags, *LP64_ABI_FLAGS, *release, *game_browser_defines(sln)])
+        abi = " ".join([*host.target_flags, *LP64_ABI_FLAGS, *release, *game_browser_defines(sln),
+                       *feature_defines(sln)])
         prefix_header = lp64(LINUX_PORT_DIR / "include" / "halo_linux_prefix.h")
         port_include = lp64(LINUX_PORT_DIR / "include")
         xdk = _quote(lp64(XDK_INCLUDE))
@@ -302,7 +304,7 @@ class Lp64Build:
             host.host_include, f"-idirafter {xdk}",
         ])
         posix_cflags = " ".join([*host.target_flags, *host.posix_flags, f"-I{platform_dir}", host.host_include,
-                                 *game_browser_defines(sln)])
+                                 *game_browser_defines(sln), *feature_defines(sln)])
         mbedtls_include = f"-I{MBEDTLS_DIR / 'include'}"
         for source in sorted(platform_dir.glob("*.c")):
             if str(source) in excluded:

@@ -8,6 +8,15 @@ It is not networked.** Online hosts and clients always play ordinary Slayer. See
 
 ## Local in-game Infection (Milestone 2, experimental)
 
+> **Feature flag:** Infection is compiled in only by `python3 configure.py
+> --infection` (then `ninja`), and is off by default. Without the flag, the
+> in-game adapter builds as no-ops, so every engine hook sees Infection inactive.
+> The `infection.*` and `debug.infection_*` settings are not offered, and the
+> test launcher never starts. The startup log reports `features: infection
+> on|off`, and the test checker fails with a rebuild hint on a build without it.
+> The standalone rules library (`infection_rules.c`) and its tests below are
+> unaffected.
+
 Local split-screen only, with no server. It needs your own Xbox-format CE maps
 (`bloodgulch.map` and `ui.map`). Enable it with settings or environment
 variables:

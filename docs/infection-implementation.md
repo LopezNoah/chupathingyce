@@ -262,6 +262,38 @@ Known limits that don't block local play:
 - other modes were not played in-game
 - a human hasn't played it with controllers yet; all play so far was scripted
 
+## Build-time feature flags (Infection and bots)
+
+Milestone 2 is committed as `b37bcb35`. After that, Infection and the
+multiplayer bots were put behind compile-time flags, following the existing
+`--game-browser` pattern.
+
+- `configure.py --infection` defines `HALO_FEATURE_INFECTION`, and `--bots`
+  defines `HALO_FEATURE_BOTS`. Both are off by default.
+- Each build generator (`linux_build.py` for Linux 32-bit and the server,
+  `lp64_build.py` for macOS and Linux 64-bit, `windows_build.py`,
+  `android_build.py`) passes `feature_defines(sln)` beside the game-browser
+  define. That covers both the game and the port sources.
+- With a flag off, the integration units compile their real code out and
+  provide only the functions other files call:
+  - Infection: inactive, original engine, no launcher.
+  - Bots: no joins, `bots_game_had_bots()` returns false, navigation resets
+    do nothing.
+  - Call sites are unchanged. The pure libraries (`infection_rules.c`,
+    `source/engine_ai/`) stay compiled with their standalone tests.
+- The settings are `#ifdef`ed out. An old `config.toml` keeps its entries; they
+  are logged as unknown and ignored, and apply again once rebuilt with the flag.
+- The startup log prints `features: infection on|off, bots on|off`.
+
+Verification on macOS:
+
+| Check | Result |
+| --- | --- |
+| Default build (both off) | Builds and links. The binary contains no Infection or bot strings or settings. With `bots.count = 2`, `infection.local_enabled = true` and `HALO_BOTS`/`HALO_INFECTION_*` set, the game warns about unknown settings, no bot joins, and no Infection launches |
+| `--infection --bots` build | Builds. All four Infection real-game scenarios pass |
+| Documented bot Team Slayer smoke test, three runs | One pass (2,610 ticks, bot kill, no friendly fire) and two checker failures. `bots.c` only gains lines, so the enabled code is unchanged; this is existing smoke-test variance (one failed run's status lines show bot kills) |
+| Checker on an Infection-off log | Fails with a rebuild hint |
+
 ## Remaining milestones, in order
 
 1. **Milestone 2 (remaining):** map opaque admission handles onto actual host player datums

@@ -272,7 +272,8 @@ static const struct config_setting config_settings[] =
 	{ "controls.pause", _config_string, "\"Escape\"", "HALO_KEY_PAUSE", _environment_value, _platform_all,
 		"The pause menu (the controller's Start)." },
 
-	/* computer-controlled players (source/game/bots.c) */
+#ifdef HALO_FEATURE_BOTS
+	/* computer-controlled players (source/game/bots.c; configure.py --bots) */
 	{ "bots.count", _config_integer, "0", "HALO_BOTS", _environment_value, _platform_all,
 		"Computer-controlled players (0 to 3) in FFA or Team Slayer games you\n"
 		"host by yourself: a custom game nobody else is in. Bots never join a game\n"
@@ -281,6 +282,7 @@ static const struct config_setting config_settings[] =
 	{ "bots.skill", _config_string, "\"marine\"", "HALO_BOT_SKILL", _environment_value, _platform_all,
 		"How well the bots play: \"recruit\", \"marine\", \"odst\" or \"spartan\".\n"
 		"Skill changes their reactions, aim and sight, never their health or damage." },
+#endif /* HALO_FEATURE_BOTS */
 
 	/* Forge, the map editor in the game (port/linux/game/forge.c) */
 	{ "forge.toggle_key", _config_string, "\"F7, B\"", "HALO_FORGE_TOGGLE_KEY", _environment_value, _platform_desktop,
@@ -488,6 +490,8 @@ static const struct config_setting config_settings[] =
 		"\"no\" never does, \"ask\" asks after the next crash and writes the answer\n"
 		"here." },
 
+#ifdef HALO_FEATURE_INFECTION
+	/* the experimental Infection mode (configure.py --infection) */
 	{ "infection.local_enabled", _config_boolean, "false", "HALO_INFECTION_LOCAL", _environment_value, _platform_all,
 		"Experimental Infection rules for LOCAL Slayer only (never LAN/online).\n"
 		"Off by default; use the local test launcher below, not network_test." },
@@ -516,7 +520,9 @@ static const struct config_setting config_settings[] =
 		"tests input restrictions and unarmed impact on a wounded target;\n"
 		"melee-full measures strikes on a full-health target; slayer-control\n"
 		"(infection.local_enabled false) is an ordinary Slayer regression." },
+#endif /* HALO_FEATURE_INFECTION */
 
+#ifdef HALO_FEATURE_BOTS
 	{ "debug.nav_probe", _config_boolean, "false", "HALO_NAV_PROBE", _environment_set_is_true, _platform_all,
 		"Opt-in BSP navigation walking probe controlling Bot 1 in a solo Slayer game.\n"
 		"No teleport or physics bypass; off in normal play." },
@@ -528,6 +534,7 @@ static const struct config_setting config_settings[] =
 		"Solo Team Slayer bot test fixture (requires three bots): seat the local\n"
 		"player in a parked Warthog and place teammate Bot 2 near the gunner entrance\n"
 		"once per map. The bot must approach and enter normally; off in normal play." },
+#endif /* HALO_FEATURE_BOTS */
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

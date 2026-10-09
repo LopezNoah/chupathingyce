@@ -160,4 +160,17 @@ void build_identity_log(void)
 	platform_log("%s", build_identity());
 	platform_log("%s", network);
 	platform_log("%s", following);
+	/* configure.py --infection / --bots: experimental features compiled in */
+	platform_log("features: infection %s, bots %s",
+#ifdef HALO_FEATURE_INFECTION
+		"on",
+#else
+		"off",
+#endif
+#ifdef HALO_FEATURE_BOTS
+		"on"
+#else
+		"off"
+#endif
+		);
 }

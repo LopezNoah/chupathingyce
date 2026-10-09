@@ -18,6 +18,8 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef HALO_FEATURE_BOTS
+
 int config_boolean(char const *name);
 char const *config_string(char const *name);
 void platform_log(char const *format, ...);
@@ -306,3 +308,12 @@ bool navigation_world_segment_clear(void *context, struct sn_point a, uint32_t a
     return fabsf(clipped.x-b.x)<0.08f && fabsf(clipped.y-b.y)<0.08f &&
         fabsf(clipped.z-target_z)<0.15f;
 }
+
+#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
+
+/* Bot navigation is compiled out: no derived navigation data exists, so
+   the engine's reset and per-tick hooks have nothing to do. */
+void navigation_world_reset(void) {}
+void navigation_world_update_for_players(void) {}
+
+#endif /* HALO_FEATURE_BOTS */

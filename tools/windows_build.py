@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 
 from .version import VERSION_SOURCES, identity_defines, release_build, version
 from .linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DIR, OPTIMISATION, STB_DIR, WINDOWS_PROFILE,
-                          XDK_INCLUDE, game_browser_defines, lto_mode, march_flag, miniupnpc_sources, pgo_mode, compile_launcher, game_defines_and_includes,
+                          XDK_INCLUDE, feature_defines, game_browser_defines, lto_mode, march_flag, miniupnpc_sources, pgo_mode, compile_launcher, game_defines_and_includes,
                           game_sources, musl_math_cflags, musl_math_sources, pgo_profile, profile_use_flags,
                           xdk_headers)
 from .lp64_build import lp64_excluded
@@ -447,7 +447,7 @@ def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
     # overrun nobody has met cannot end a game)
     abi = " ".join(target.abi_flags + [march_flag(sln)] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False)
                                                            else ["-fstack-protector-strong"])
-                   + game_browser_defines(sln))
+                   + game_browser_defines(sln) + feature_defines(sln))
     sdl_include = SDL_DIR / "include"
     libs = " ".join(
         [_quote(sdl_lib / "SDL3.lib")]

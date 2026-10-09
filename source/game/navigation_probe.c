@@ -10,6 +10,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#ifdef HALO_FEATURE_BOTS
+
 int config_boolean(char const *name);
 char const *config_string(char const *name);
 void platform_log(char const *format, ...);
@@ -160,3 +162,11 @@ boolean navigation_probe_action(long unit, struct player_action *action)
     else if (probe.status!=SN_RUNNING) failed();
     return TRUE;
 }
+
+#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
+
+/* The walking probe drives a bot; with bots compiled out nothing calls it.
+   (A declaration keeps this a non-empty translation unit.) */
+typedef int navigation_probe_compiled_out;
+
+#endif /* HALO_FEATURE_BOTS */

@@ -46,6 +46,20 @@ parser.add_argument(
     "(HALO_GAME_BROWSER; port/linux/src/browser.c); on unless --no-game-browser",
 )
 parser.add_argument(
+    "--infection",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="experimental Infection game mode (HALO_FEATURE_INFECTION; source/game/game_engine_infection.c, "
+    "docs/infection.md); off unless --infection",
+)
+parser.add_argument(
+    "--bots",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="experimental multiplayer bots and their navigation (HALO_FEATURE_BOTS; source/game/bots.c, "
+    "docs/bots.md); off unless --bots",
+)
+parser.add_argument(
     "--lto",
     choices=["full", "thin", "off"],
     default="full",
@@ -94,6 +108,8 @@ sln = SimpleNamespace(
     compiler_launcher=args.compiler_launcher,
     port_release=args.release,
     game_browser=args.game_browser,
+    feature_infection=args.infection,
+    feature_bots=args.bots,
     port_lto=args.lto,
     port_portable=args.portable,
     port_pgo=args.pgo,

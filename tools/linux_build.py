@@ -224,6 +224,14 @@ def game_browser_defines(sln: Any) -> List[str]:
     return ["-DHALO_GAME_BROWSER"] if getattr(sln, "game_browser", False) else []
 
 
+def feature_defines(sln: Any) -> List[str]:
+    """configure.py --infection / --bots: experimental gameplay features,
+    compiled in only when asked for (off by default). Off, their integration
+    units build as no-ops and their settings are not offered."""
+    return ((["-DHALO_FEATURE_INFECTION"] if getattr(sln, "feature_infection", False) else [])
+            + (["-DHALO_FEATURE_BOTS"] if getattr(sln, "feature_bots", False) else []))
+
+
 def march_flag(sln: Any) -> str:
     """The instruction set of the native x86 builds: this machine's
     (-march=native, the default), or with configure.py --portable the
@@ -367,7 +375,7 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
     prefix_header = PORT_DIR / "include" / "halo_linux_prefix.h"
     semantics_header = units.semantics_header
     platform_semantics_header = units.platform_semantics_header
-    browser_defines = ["-DHALO_GAME_BROWSER"] if units.game_browser else []
+    browser_defines = (["-DHALO_GAME_BROWSER"] if units.game_browser else []) + feature_defines(sln)
     # (a debug build checks its stack frames, and stops at the first one
     # overrun, as it stops at the first failed assertion; a release build
     # does not, so that an overrun nobody has met cannot end a game)

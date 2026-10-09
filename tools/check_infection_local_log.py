@@ -13,8 +13,15 @@ INFECTED_TEAM, SURVIVOR_TEAM = 0, 1
 PHASE = re.compile(r"infection local: tick=(\d+) round=(\d+) phase=(.*?) remaining=(\d+) survivors=(\d+) winner=(\d+)")
 
 
+def require_feature(text: str) -> None:
+    """The game must be built with configure.py --infection."""
+    assert "features: infection off" not in text, \
+        "this build has Infection compiled out: run python3 configure.py --infection, then ninja"
+
+
 def check_slayer_control(text):
     """Infection disabled: ordinary Slayer must behave as before."""
+    require_feature(text)
     assert "as an ordinary Slayer control" in text, "control launcher did not run"
     assert "window closed" not in text, "run interrupted by an external window close/quit event; rerun"
     assert "infection local: tick" not in text and "infection local: spawn" not in text, "Infection adapter active in Slayer"
@@ -33,6 +40,7 @@ def check_slayer_control(text):
 
 def check(text: str, match: bool = False, lifecycle: bool = False, melee: str = "") -> int:
     """melee: "" (none), "wounded" (single strike) or "full" (full-health)."""
+    require_feature(text)
     assert "local players (no server)" in text, "local launcher did not run"
     assert "window closed" not in text, "run interrupted by an external window close/quit event; rerun"
     assert "loadout failed" not in text and "aborting" not in text, "loadout/integration fault"

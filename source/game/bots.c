@@ -65,6 +65,8 @@ Configuration (port/linux/src/port_config.c): bots.count (0..3), bots.skill.
 #include "engine_ai/navigation.h"
 #include "engine_ai/traversal.h"
 
+#ifdef HALO_FEATURE_BOTS
+
 /* network_game_globals.c's */
 boolean network_game_distributed_client(void);
 /* port/linux/game/network_distributed.c's */
@@ -2369,3 +2371,33 @@ static void bot_leave(
 	bot->active = FALSE;
 	platform_log("bots: a bot left (solo Slayer host gate no longer permits bots)");
 }
+
+#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
+
+/* Bots are compiled out: no bot ever joins, and every query says so. */
+void bots_initialize_for_new_map(
+	void)
+{
+	return;
+}
+
+void bots_update(
+	void)
+{
+	return;
+}
+
+boolean bots_game_had_bots(
+	void)
+{
+	return FALSE;
+}
+
+boolean bots_player_is_bot(
+	long player_index)
+{
+	(void)player_index;
+	return FALSE;
+}
+
+#endif /* HALO_FEATURE_BOTS */

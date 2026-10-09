@@ -522,6 +522,8 @@ static void biped_update_jumping(
 	struct unit_animation_update_data *animation);
 static void biped_update_physics(
 	struct biped_physics *physics);
+/* units.c's: whether the unit gets the animation enhancements */
+boolean unit_animation_enhanced(long unit_index);
 static void biped_snap_facing(
 	long biped_index);
 
@@ -3345,7 +3347,8 @@ static void biped_update_turning(
 			throw is a state of its own, which the original never turned in */
 			boolean throwing_turn =
 				biped->unit.player_index!=NONE &&
-				biped->unit.animation.state==_unit_state_throw_grenade;
+				biped->unit.animation.state==_unit_state_throw_grenade &&
+				unit_animation_enhanced(biped_index);
 			real_vector3d turn_axis;
 			real turn_error;
 			real facing_alignment;

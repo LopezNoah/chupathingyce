@@ -26,6 +26,7 @@ record in pieces of HALO_PORT_NETWORK_GAME_SETTINGS_FRAGMENT_SIZE bytes.
 """
 
 import argparse
+import contextlib
 import errno
 import ipaddress
 import math
@@ -94,7 +95,7 @@ def network_game_layout(machines, players):
 def wide(text, count):
     units = [ord(c) for c in text[:count - 1]]
     units += [0] * (count - len(units))
-    return struct.pack(">%dH" % count, *units)
+    return struct.pack(f">{count}H", *units)
 
 
 def message(packet_type, payload):
@@ -122,7 +123,7 @@ class Machine:
         self.address = address
         self.host = host
         self.log = log
-        self.name = "bot%d" % index
+        self.name = f"bot{index}"
         self.state = "connecting"
         self.machine_index = None
         self.buffer = b""
@@ -168,14 +169,13 @@ class Machine:
         reads would fill its send buffer"""
         self.state = "closed"
         if self.tcp:
-            try:
+            with contextlib.suppress(KeyError, ValueError):
                 selector.unregister(self.tcp)
-            except (KeyError, ValueError):
-                pass
             self.tcp.close()
             self.tcp = None
 
     def send(self, data):
+        assert self.tcp is not None, "send requires a connected machine"
         view = memoryview(data)
         deadline = time.monotonic() + 5
         while view:
@@ -192,16 +192,17 @@ class Machine:
         self.state = "joining"
 
     def receive(self):
+        assert self.tcp is not None, "receive requires a connected machine"
         try:
             data = self.tcp.recv(1 << 20)
         except BlockingIOError:
             return True
         except ConnectionError:
-            self.log("%s: connection lost" % self.name)
+            self.log("{}: connection lost".format(self.name))
             self.state = "closed"
             return False
         if not data:
-            self.log("%s: host closed the connection" % self.name)
+            self.log("{}: host closed the connection".format(self.name))
             self.state = "closed"
             return False
         self.bytes_received += len(data)
@@ -210,7 +211,7 @@ class Machine:
             header = struct.unpack(">H", self.buffer[:2])[0]
             length = header >> 4
             if length < 3:
-                self.log("%s: bad message header %04x" % (self.name, header))
+                self.log("{}: bad message header {:04x}".format(self.name, header))
                 self.state = "closed"
                 return False
             if len(self.buffer) < length:
@@ -226,7 +227,7 @@ class Machine:
             self.state = "pregame"
             self.send(message(CLIENT_SETTINGS_REQUEST, wide(self.name, 32) + bytes([self.machine_index & 0xFF])))
         elif packet_type == SERVER_MACHINE_REJECTED:
-            self.log("%s: rejected, reason %d" % (self.name, struct.unpack(">h", payload[:2])[0]))
+            self.log(f"{self.name}: rejected, reason {struct.unpack('>h', payload[:2])[0]}")
             self.state = "rejected"
         elif packet_type == SERVER_GAME_SETTINGS_UPDATE:
             total, offset, length = struct.unpack(">HHH", payload[:6])
@@ -259,7 +260,7 @@ class Machine:
             self.last_update_number = None
             self.player_added = True
         elif packet_type in (SERVER_GRACEFUL_GAME_EXIT_PREGAME, SERVER_GRACEFUL_GAME_EXIT_POSTGAME):
-            self.log("%s: host ended the game" % self.name)
+            self.log("{}: host ended the game".format(self.name))
             self.state = "closed"
 
     def tick(self, now):
@@ -276,10 +277,8 @@ class Machine:
             yaw = (now * 0.5 + self.index) % (2 * math.pi)
             payload = (struct.pack(">I", (self.last_update_number + 1) & 0x7FFFFFFF) + bytes([1]) +
                        player_action(yaw))
-            try:
+            with contextlib.suppress(OSError):
                 self.udp.sendto(message(CLIENT_GAME_UPDATE, payload), (self.host, SERVER_PORT))
-            except OSError:
-                pass
 
 
 def main():
@@ -302,17 +301,17 @@ def main():
     started = time.monotonic()
 
     def log(text):
-        print("[%7.2f] %s" % (time.monotonic() - started, text), flush=True)
+        print("[{:7.2f}] {}".format(time.monotonic() - started, text), flush=True)
 
     try:
         first_address = ipaddress.IPv4Address(options.first_address)
         last_address = ipaddress.IPv4Address(int(first_address) + max(options.machines, 1) - 1)
     except ValueError as error:
-        parser.error("--first-address: %s" % error)
+        parser.error("--first-address: {}".format(error))
     if first_address.is_loopback and not last_address.is_loopback:
-        parser.error("--first-address: %d machines from %s run past 127.255.255.255" % (options.machines, first_address))
+        parser.error(f"--first-address: {options.machines} machines from {first_address} run past 127.255.255.255")
     if not first_address.is_loopback:
-        log("warning: %s is not a loopback address; the machines bind real addresses" % first_address)
+        log("warning: {} is not a loopback address; the machines bind real addresses".format(first_address))
     machines = []
     for index in range(options.machines):
         address = str(first_address + index)
@@ -326,7 +325,7 @@ def main():
     selector = selectors.DefaultSelector()
     waiting = list(machines)
     next_connect_time = 0
-    log("connecting %d machines to %s:%d" % (len(machines), options.host, SERVER_PORT))
+    log(f"connecting {len(machines)} machines to {options.host}:{SERVER_PORT}")
 
     start_requested = False
     all_in_time = None
@@ -353,7 +352,7 @@ def main():
                             machine.retry_time = now + 0.5
                             waiting.append(machine)
                         else:
-                            log("%s: connect failed (%d)" % (machine.name, error))
+                            log(f"{machine.name}: connect failed ({error})")
                             machine.state = "closed"
                         continue
                     selector.modify(machine.tcp, selectors.EVENT_READ, machine)
@@ -364,7 +363,7 @@ def main():
                             machine.close(selector)
                     except OSError as error:
                         # a reply the host stopped reading, or a reset
-                        log("%s: %s" % (machine.name, error))
+                        log("{}: {}".format(machine.name, error))
                         machine.close(selector)
             if now - last_input >= 1.0 / options.rate:
                 last_input = now
@@ -373,13 +372,13 @@ def main():
                         try:
                             machine.tick(now)
                         except OSError as error:
-                            log("%s: %s" % (machine.name, error))
+                            log("{}: {}".format(machine.name, error))
                             machine.close(selector)
             if options.start and not start_requested:
                 ready = [m for m in machines if m.state == "pregame" and m.player_added and m.settings_complete]
                 if len(ready) == len(machines) and all_in_time is None:
                     all_in_time = now
-                    log("all %d machines are in the lobby" % len(machines))
+                    log(f"all {len(machines)} machines are in the lobby")
                 if all_in_time is not None and now - all_in_time >= options.start_delay:
                     start_requested = True
                     log("asking the host to start the game")
@@ -387,7 +386,7 @@ def main():
                         machines[0].send(message(CLIENT_GAME_START_REQUEST,
                                                  struct.pack(">h", COUNTDOWN_EVENT_START_IMMEDIATELY)))
                     except OSError as error:
-                        log("%s: %s" % (machines[0].name, error))
+                        log("{}: {}".format(machines[0].name, error))
                         machines[0].close(selector)
             if now - last_status >= options.status_every:
                 last_status = now
@@ -403,7 +402,7 @@ def main():
                             machines_in_game = struct.unpack_from("<h", sample.settings_complete, layout["machine_count"])[0]
                             players = struct.unpack_from("<h", sample.settings_complete, layout["player_count"])[0]
                 updates = [m.last_update_number for m in machines if m.last_update_number is not None]
-                log("states %s; host game: %s machines, %s players; latest update %s; received %.1f MB" % (
+                log("states {}; host game: {} machines, {} players; latest update {}; received {:.1f} MB".format(
                     states, machines_in_game, players, max(updates) if updates else None,
                     sum(m.bytes_received for m in machines) / 1e6))
             if options.seconds and now - started >= options.seconds:

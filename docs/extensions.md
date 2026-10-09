@@ -117,6 +117,9 @@ empty descriptor when selected; its editor implementation is never activated.
 
 ## Validation
 
+Local macOS gameplay smoke-test results and remaining gaps are recorded in
+[extension-regression.md](extension-regression.md).
+
 Validated on macOS: all four Infection/bots combinations with Forge enabled,
 and both all-off and Infection+bots builds with Forge disabled. Each build
 links only the selected descriptors. Non-macOS platform execution is not

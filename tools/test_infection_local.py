@@ -30,6 +30,7 @@ def main():
     env = dict(os.environ)
     env.update({
         "HALO_DATA_ROOT": str(root / "data"), "HALO_SAVE_ROOT": str(root / "saves"),
+        "HALO_NET_ADDRESS": "127.0.0.1", "HALO_NET_BROADCAST": "127.0.0.1",
         "HALO_NET_ONLINE": "false", "HALO_NET_PUBLIC_LOBBY": "false",
         "HALO_NET_HOST_PUBLIC": "false", "HALO_NET_LIST_GAMES": "false",
         "HALO_NET_REPORT_GAMES": "false", "HALO_NET_REPORT_EVENTS": "false",

@@ -122,6 +122,9 @@ symbols in this file:
 #include "camera_scripting.h"
 #include "dead_camera.h"
 #include "coop_spectate.h" /* port: port/linux/game/coop_spectate.c */
+#ifdef HALO_64BIT
+#include "forge.h" /* port: port/linux/game/forge.c */
+#endif
 #include "editor_flying_camera.h"
 #include "first_person_camera.h"
 #include "flying_camera.h"
@@ -931,6 +934,30 @@ static void director_choose_camera(
 	boolean initialize,
 	boolean key)
 {
+#ifdef HALO_FORGE
+	/* port: Forge's free camera while it is open, and the game's chosen
+	afresh once it closes (port/linux/game/forge.c) */
+	{
+		void *forge_proc;
+		boolean forge_reset;
+
+		if (forge_director_camera(local_player_index, &forge_proc, &forge_reset))
+		{
+			if (director_get(local_player_index)->camera_proc != (director_camera_update_proc)forge_proc)
+				director_set_camera(local_player_index, (director_camera_update_proc)forge_proc, FALSE);
+			return;
+		}
+		if (forge_reset && director_globals.game_mode != _director_mode_editor &&
+			director_globals.game_mode != _director_mode_script_camera_record)
+		{
+			if (*director_camera_scripted)
+				director_set_camera(local_player_index, (director_camera_update_proc)scripted_camera_update, FALSE);
+			else
+				director_choose_game_perspective(local_player_index, TRUE);
+			return;
+		}
+	}
+#endif
 	switch (director_globals.game_mode)
 	{
 	case _director_mode_game:

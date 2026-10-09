@@ -395,6 +395,7 @@ symbols in this file:
 #include "input/input_abstraction.h"
 #include "interface/player_ui.h"
 #include "interface/marketing_and_strategic_business_development.h"
+#include "forge.h" /* port: port/linux/game/forge.c */
 #endif
 
 /* ---------- constants */
@@ -3429,6 +3430,11 @@ void main_loop(
 					render_frame &= !game_engine_running() || game_time_get()>=3;
 
 					collision_log_continue_period(1);
+#ifdef HALO_FORGE
+					/* port: Forge, the map editor (port/linux/game/forge.c): every
+					frame, paused or not, before the director takes its camera */
+					forge_update(main_globals.seconds_elapsed);
+#endif
 					director_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					observer_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					collision_log_end_period();

@@ -53,6 +53,9 @@ OBJECTS.C
 #include "sound/game_sound.h"
 #include "structures/structure_bsp_definitions.h"
 #include "units/units.h"
+#ifdef HALO_64BIT
+#include "forge.h" /* port: port/linux/game/forge.c */
+#endif
 
 /* ---------- constants */
 
@@ -3950,6 +3953,10 @@ long object_new_from_scenario(
 				result = object_new(&placement_data);
 				if (result!=NONE)
 				{
+#ifdef HALO_FORGE
+					/* port: which placement made it, for Forge to edit */
+					forge_object_placed_from_scenario(result, scenario_object);
+#endif
 					object_type_place(result, scenario_object);
 					if (scenario_object->name_index!=NONE)
 					{

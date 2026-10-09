@@ -272,6 +272,14 @@ static const struct config_setting config_settings[] =
 	{ "controls.pause", _config_string, "\"Escape\"", "HALO_KEY_PAUSE", _environment_value, _platform_all,
 		"The pause menu (the controller's Start)." },
 
+	/* Forge, the map editor in the game (port/linux/game/forge.c) */
+	{ "forge.toggle_key", _config_string, "\"F7, B\"", "HALO_FORGE_TOGGLE_KEY", _environment_value, _platform_desktop,
+		"Opens and closes Forge, the map editor, in a game on this machine (a\n"
+		"campaign level, or a multiplayer game nobody else is in): up to two keys,\n"
+		"separated by a comma, named as in [controls]; empty for none. The game\n"
+		"pauses while it is open. Its edits are kept beside the maps, in\n"
+		"forge\\<map>.forge.json, and the map's own file is never changed." },
+
 	{ "game.console_log", _config_string, "\"important\"", "HALO_CONSOLE_LOG", _environment_value, _platform_all,
 		"What the game's console shows on screen of what it logs: \"important\"\n"
 		"(bans, players dropped for cheating, what refuses a command, and the\n"
@@ -542,6 +550,11 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
+	{ "debug.forge_test", _config_string, "\"\"", "HALO_FORGE_TEST", _environment_value, _platform_desktop,
+		"Scripted Forge edits once a game is under way, for automated tests\n"
+		"(port/linux/game/forge.c): \"edit\" opens Forge, flies, moves, turns,\n"
+		"places and deletes objects, saves, undoes and redoes, and closes it;\n"
+		"\"verify\" logs whether the saved edits are on the map; empty none." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

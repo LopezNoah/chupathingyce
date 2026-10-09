@@ -185,6 +185,9 @@ struct game_options;
 #include "rasterizer/common/rasterizer_common.h"
 #endif
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
+#ifdef HALO_64BIT
+#include "forge.h" /* port: port/linux/game/forge.c */
+#endif
 
 /* network_game_globals.c's */
 boolean network_game_distributed_client(void);
@@ -675,6 +678,10 @@ void game_initialize_for_new_map(
 
 	game_globals->active = TRUE;
 	objects_place();
+#ifdef HALO_FORGE
+	/* port: the objects Forge added to the map */
+	forge_objects_placed();
+#endif
 	if (!game_in_editor())
 		ai_place();
 	/* (the map's objects, placed as on the host: a distributed client's own

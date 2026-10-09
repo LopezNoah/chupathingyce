@@ -41,6 +41,7 @@ drive the controller.
 #include "port_config.h"
 #include "touch_input.h"
 #include "halo_keyboard.h"
+#include "halo_forge_input.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -94,6 +95,9 @@ static int wheel_direction = 0;
 (halo_linux_mouse_aiming) */
 static Uint64 mouse_aimed_ms = 0;
 static Uint64 stick_aimed_ms = 0;
+/* the wheel's turns for Forge (halo_forge_input_read), apart from the
+weapon switch's */
+static float forge_wheel_accumulated = 0.0f;
 
 /* the right stick's deflection that counts as aiming with it, clear of a
 worn stick's drift */
@@ -132,7 +136,8 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 
 	*yaw = 0.0f;
 	*pitch = 0.0f;
-	if (gamepad_index != 0)
+	/* (Forge open: the motion is its camera's, halo_forge_input_read) */
+	if (gamepad_index != 0 || halo_forge_input_captured())
 		return FALSE;
 	if (read_at != config_changes())
 	{
@@ -200,6 +205,7 @@ static void mouse_poll(const struct platform_input_state *input)
 		if (input->mouse_dx != 0.0f || input->mouse_dy != 0.0f)
 			mouse_aimed_ms = SDL_GetTicks();
 		mouse_wheel_accumulated += input->mouse_wheel;
+		forge_wheel_accumulated += input->mouse_wheel;
 		if (input->mouse_wheel != 0.0f)
 			wheel_moved_ms = SDL_GetTicks();
 	}
@@ -595,6 +601,121 @@ static void keyboard_controls(const struct platform_input_state *input, XINPUT_G
 unsigned long halo_keyboard_actions(short controller_index)
 {
 	return controller_index == 0 ? keyboard_actions_held : 0;
+}
+
+/* ---------- Forge's keyboard and mouse */
+
+/* forge.toggle_key's keys or buttons, read again when config.toml changes */
+static int forge_toggle_bindings[MAXIMUM_BINDINGS] = { -1, -1 };
+static unsigned long forge_toggle_read_at = (unsigned long)-1;
+
+static void forge_toggle_read(void)
+{
+	const char *text;
+	int slot;
+
+	if (forge_toggle_read_at == config_changes())
+		return;
+	forge_toggle_read_at = config_changes();
+	text = config_string("forge.toggle_key");
+	for (slot = 0; slot < MAXIMUM_BINDINGS; slot++)
+	{
+		char name[64];
+		size_t length;
+
+		forge_toggle_bindings[slot] = -1;
+		while (*text == ' ' || *text == ',')
+			text++;
+		length = strcspn(text, ",");
+		if (!length)
+			continue;
+		snprintf(name, sizeof(name), "%.*s", (int)length, text);
+		while (*name && name[strlen(name) - 1] == ' ')
+			name[strlen(name) - 1] = 0;
+		forge_toggle_bindings[slot] = halo_input_from_name(name);
+		if (forge_toggle_bindings[slot] < 0)
+			platform_log("forge: forge.toggle_key has no key or button named \"%s\"", name);
+		text += length;
+	}
+}
+
+void halo_forge_input_read(struct halo_forge_input *forge, int capture)
+{
+	static const int scancodes[NUMBER_OF_HALO_FORGE_KEYS] =
+	{
+		[HALO_FORGE_KEY_TOGGLE] = -1,
+		[HALO_FORGE_KEY_W] = SDL_SCANCODE_W,
+		[HALO_FORGE_KEY_A] = SDL_SCANCODE_A,
+		[HALO_FORGE_KEY_S] = SDL_SCANCODE_S,
+		[HALO_FORGE_KEY_D] = SDL_SCANCODE_D,
+		[HALO_FORGE_KEY_SPACE] = SDL_SCANCODE_SPACE,
+		[HALO_FORGE_KEY_C] = SDL_SCANCODE_C,
+		[HALO_FORGE_KEY_SHIFT] = SDL_SCANCODE_LSHIFT,
+		[HALO_FORGE_KEY_CTRL] = SDL_SCANCODE_LCTRL,
+		[HALO_FORGE_KEY_ALT] = SDL_SCANCODE_LALT,
+		[HALO_FORGE_KEY_E] = SDL_SCANCODE_E,
+		[HALO_FORGE_KEY_Q] = SDL_SCANCODE_Q,
+		[HALO_FORGE_KEY_R] = SDL_SCANCODE_R,
+		[HALO_FORGE_KEY_P] = SDL_SCANCODE_P,
+		[HALO_FORGE_KEY_V] = SDL_SCANCODE_V,
+		[HALO_FORGE_KEY_G] = SDL_SCANCODE_G,
+		[HALO_FORGE_KEY_H] = SDL_SCANCODE_H,
+		[HALO_FORGE_KEY_Z] = SDL_SCANCODE_Z,
+		[HALO_FORGE_KEY_Y] = SDL_SCANCODE_Y,
+		[HALO_FORGE_KEY_DELETE] = SDL_SCANCODE_DELETE,
+		[HALO_FORGE_KEY_ESCAPE] = SDL_SCANCODE_ESCAPE,
+		[HALO_FORGE_KEY_LEFT_BRACKET] = SDL_SCANCODE_LEFTBRACKET,
+		[HALO_FORGE_KEY_RIGHT_BRACKET] = SDL_SCANCODE_RIGHTBRACKET,
+		[HALO_FORGE_KEY_UP] = SDL_SCANCODE_UP,
+		[HALO_FORGE_KEY_DOWN] = SDL_SCANCODE_DOWN,
+		[HALO_FORGE_KEY_LEFT] = SDL_SCANCODE_LEFT,
+		[HALO_FORGE_KEY_RIGHT] = SDL_SCANCODE_RIGHT,
+		[HALO_FORGE_KEY_PAGE_UP] = SDL_SCANCODE_PAGEUP,
+		[HALO_FORGE_KEY_PAGE_DOWN] = SDL_SCANCODE_PAGEDOWN,
+		[HALO_FORGE_KEY_MOUSE_LEFT] = INPUT_MOUSE + SDL_BUTTON_LEFT,
+		[HALO_FORGE_KEY_MOUSE_RIGHT] = INPUT_MOUSE + SDL_BUTTON_RIGHT,
+	};
+	struct platform_input_state input;
+	int key, slot;
+
+	memset(forge, 0, sizeof(*forge));
+	platform_pump_events();
+	platform_input_read(&input, FALSE);
+	forge->available = input.focused && !input.menus && !console_is_active() && !text_typing;
+	if (capture)
+	{
+		pthread_mutex_lock(&mouse_lock);
+		forge->mouse_dx = mouse_pending_x;
+		forge->mouse_dy = mouse_pending_y;
+		forge->wheel = forge_wheel_accumulated;
+		mouse_pending_x = 0.0f;
+		mouse_pending_y = 0.0f;
+		mouse_polls_unconsumed = 0;
+		forge_wheel_accumulated = 0.0f;
+		pthread_mutex_unlock(&mouse_lock);
+	}
+	else
+	{
+		pthread_mutex_lock(&mouse_lock);
+		forge_wheel_accumulated = 0.0f;
+		pthread_mutex_unlock(&mouse_lock);
+	}
+	if (!forge->available)
+	{
+		forge->mouse_dx = forge->mouse_dy = forge->wheel = 0.0f;
+		return;
+	}
+	for (key = 0; key < NUMBER_OF_HALO_FORGE_KEYS; key++)
+		forge->keys[key] = (unsigned char)input_held(&input, scancodes[key]);
+	/* (either side's modifier) */
+	forge->keys[HALO_FORGE_KEY_SHIFT] |= input.keys[SDL_SCANCODE_RSHIFT] != 0;
+	forge->keys[HALO_FORGE_KEY_CTRL] |= input.keys[SDL_SCANCODE_RCTRL] != 0 ||
+		input.keys[SDL_SCANCODE_LGUI] != 0 || input.keys[SDL_SCANCODE_RGUI] != 0;
+	forge->keys[HALO_FORGE_KEY_ALT] |= input.keys[SDL_SCANCODE_RALT] != 0;
+	forge->keys[HALO_FORGE_KEY_DELETE] |= input.keys[SDL_SCANCODE_BACKSPACE] != 0;
+	forge_toggle_read();
+	for (slot = 0; slot < MAXIMUM_BINDINGS; slot++)
+		forge->keys[HALO_FORGE_KEY_TOGGLE] |= (unsigned char)input_held(&input, forge_toggle_bindings[slot]);
 }
 
 /* A scroll of the wheel switches weapons once: it holds Y for WHEEL_PRESS_MS
@@ -1095,7 +1216,8 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		{
 			if (input.menus)
 				keyboard_gamepad(&input, &state->Gamepad);
-			else
+			/* (Forge open: the keys are its, halo_forge_input_read) */
+			else if (!halo_forge_input_captured())
 				keyboard_controls(&input, &state->Gamepad);
 		}
 		if (port_gamepad(gamepads, count, 0))

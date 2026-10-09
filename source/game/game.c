@@ -118,6 +118,8 @@ struct game_options;
 
 /* ---------- headers */
 
+#include <stdint.h>
+
 #include "cseries/cseries.h"
 #include "game/game.h"
 #include "ai/ai.h"
@@ -205,10 +207,10 @@ void network_actors_drive(void);
 
 struct game_options
 {
-	unsigned long flags;
+	uint32_t flags;
 	short code_version;
 	short difficulty;
-	unsigned long random_seed;
+	uint32_t random_seed;
 	char map_name[256];
 };
 

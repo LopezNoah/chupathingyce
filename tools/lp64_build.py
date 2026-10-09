@@ -22,7 +22,7 @@ See port/macos/README.md.
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Set
+from typing import Any, Sequence
 
 from .linux_build import (
     CUSTOM_EDITION_DEFINES,
@@ -88,7 +88,7 @@ LP64_ABI_FLAGS = [
 ]
 
 
-def lp64_game_flags(host_flags: List[str]) -> List[str]:
+def lp64_game_flags(host_flags: list[str]) -> list[str]:
     """The Linux build's game flags, with the conversions that truncate a
     64-bit pointer made errors: each is a place that still treats an Xbox
     address as a pointer or the reverse. host_flags restrict the host's C
@@ -128,23 +128,23 @@ class Lp64Host:
     # the build's name: its folder in build/, its rules' prefix
     name: str
     # the target (and instruction set) of every unit
-    target_flags: List[str]
+    target_flags: list[str]
     # lp64_game_flags(...)
-    game_flags: List[str]
+    game_flags: list[str]
     # the posix_*.c units', with the host's own ABI and no rewrite (their
     # boundary types are posix.h's), after target_flags
-    posix_flags: List[str]
+    posix_flags: list[str]
     # where the host's libraries' headers are (SDL3), or ""
     host_include: str = ""
     # the third-party libraries' extra flags (mbedtls, miniupnpc)
-    third_party_flags: List[str] = field(default_factory=list)
+    third_party_flags: list[str] = field(default_factory=list)
     # sources left out ("path/to/file.c")
-    excluded: Set[str] = field(default_factory=set)
+    excluded: set[str] = field(default_factory=set)
     # the host's own platform units, with posix_flags
-    host_sources: List[Path] = field(default_factory=list)
+    host_sources: list[Path] = field(default_factory=list)
     # more platform units with the Xbox's ABI, rewritten and built as
     # port/linux/src's (the dedicated server's: tools/server_build.py)
-    platform_sources: List[Path] = field(default_factory=list)
+    platform_sources: list[Path] = field(default_factory=list)
 
 
 @dataclass
@@ -156,23 +156,26 @@ class Lp64Unit:
     native: bool = False
 
 
-def load_json(path: Path) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_json(path: Path) -> dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read {path}: {error}") from error
 
 
-def lp64_excluded() -> List[str]:
+def lp64_excluded() -> list[str]:
     """the sources every 64-bit build leaves out (port/linux/port.json
     "lp64")"""
     return list(load_json(LINUX_PORT_CONFIG).get("lp64", {}).get("exclude", []))
 
 
-def lp64_configure_inputs() -> List[Path]:
+def lp64_configure_inputs() -> list[Path]:
     """Files whose change must re-run configure.py (with the build's own)."""
     return [Path(__file__), LINUX_PORT_CONFIG, LINUX_PORT_DIR / "src", LINUX_PORT_DIR / "game"]
 
 
-def rewritten_inputs(extra_roots: Sequence[Path] = ()) -> List[Path]:
+def rewritten_inputs(extra_roots: Sequence[Path] = ()) -> list[Path]:
     """Every file compiled or included with the Xbox's ABI: the rewrite's
     inputs. Headers come along whole, so that includes relative to the
     including file find the rewritten copies."""
@@ -241,7 +244,7 @@ class Lp64Build:
         """the rewritten copy of path"""
         return self.lp64_dir / path
 
-    def units(self, host: Lp64Host, generated_sources: List[Path]) -> List[Lp64Unit]:
+    def units(self, host: Lp64Host, generated_sources: list[Path]) -> list[Lp64Unit]:
         """every unit of the game for host, in link order"""
         sln = self.sln
         lp64 = self.lp64
@@ -253,7 +256,7 @@ class Lp64Build:
         prefix_header = lp64(LINUX_PORT_DIR / "include" / "halo_linux_prefix.h")
         port_include = lp64(LINUX_PORT_DIR / "include")
         xdk = _quote(lp64(XDK_INCLUDE))
-        units: List[Lp64Unit] = []
+        units: list[Lp64Unit] = []
 
         def add(source: Path, cflags: str, native: bool = False) -> None:
             units.append(Lp64Unit(source, cflags, native))
@@ -370,8 +373,8 @@ class Lp64Build:
                                   f"-include {MUSL_MATH_DIR}/include/libm.h"]))
         return units
 
-    def objects(self, host: Lp64Host, generated_sources: List[Path], obj_dir: Path,
-                extra_cflags: List[str] = []) -> List[Path]:
+    def objects(self, host: Lp64Host, generated_sources: list[Path], obj_dir: Path,
+                extra_cflags: list[str] = []) -> list[Path]:
         """the objects of every unit, compiled into obj_dir; extra_cflags go
         to the units with the Xbox's ABI (link-time optimisation)"""
         objects = []

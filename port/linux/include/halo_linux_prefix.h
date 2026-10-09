@@ -14,6 +14,13 @@ byte-for-byte identical to what the matching MSVC build compiles.
 #error the Linux port targets 32-bit x86: game data structures assume 32-bit pointers
 #endif
 
+#ifndef HALO_64BIT
+#include <stdint.h>
+#if UINTPTR_MAX == UINT32_MAX
+#define HALO_GAME_ABI_LAYOUT 1
+#endif
+#endif
+
 /* ---------- musl's wide characters (the static dedicated servers,
 tools/server_build.py: HALO_MUSL)
 
@@ -34,7 +41,8 @@ typedef unsigned short wint_t;
 /* ---------- pointers inside Xbox data (the 64-bit build; a no-op for the
 32-bit ones) */
 
-#include "../../../source/cseries/xbox_address.h"
+// pi-lens-ignore: unused-includes
+#include "../../../source/cseries/xbox_address.h" // IWYU pragma: keep
 
 /* ---------- XDK architecture selection (MSVC predefines these) */
 
@@ -66,7 +74,8 @@ the game declares itself; uintptr_t, which Apple's <sys/types.h> declares */
 #define __NO_CTYPE 1
 #include <stdint.h>
 #endif
-#include <stddef.h>
+// pi-lens-ignore: unused-includes
+#include <stddef.h> // IWYU pragma: keep
 #ifndef __wint_t_defined
 #define __wint_t_defined 1
 #define _WINT_T 1
@@ -76,18 +85,21 @@ typedef unsigned short wint_t;
 #define u_long halo_host_u_long
 #include <sys/types.h>
 #undef u_long
-#include <stdarg.h>
-#include <float.h>
-#include <ctype.h>
-#include <errno.h>
+#include <stdarg.h> // IWYU pragma: keep
+#include <float.h> // IWYU pragma: keep
+#include <ctype.h> // IWYU pragma: keep
+#include <errno.h> // IWYU pragma: keep
 #include <setjmp.h>
 #include <signal.h>
 #include <time.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+// pi-lens-ignore: unused-includes
 #include <string.h>
+// pi-lens-ignore: unused-includes
 #include <wchar.h>
+// pi-lens-ignore: unused-includes
 #include <assert.h>
 #endif
 
@@ -153,11 +165,13 @@ platform layer includes the XDK headers itself, via platform.h. */
 
 #ifndef HALO_LINUX_PLATFORM_LAYER
 #include "halo_linux_winsock_names.h"
-#include "halo_linux_source_fixups.h"
+// pi-lens-ignore: unused-includes
+#include "halo_linux_source_fixups.h" // IWYU pragma: keep
 #endif
 
 /* ---------- MSVC built-in types */
 
-#include <stddef.h>
+// pi-lens-ignore: unused-includes
+#include <stddef.h> // IWYU pragma: keep
 
 #endif /* __HALO_LINUX_PREFIX_H */

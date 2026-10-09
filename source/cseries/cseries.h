@@ -11,11 +11,17 @@ CSERIES.H
 #include <StdDef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
+#include <math.h> // IWYU pragma: keep
 #include <string.h>
-#include <stdarg.h>
+#include <stdarg.h> // IWYU pragma: keep
 
 #include "xbox_address.h"
+
+/* LP64's rewritten C units enable Xbox-layout checks only for the generated
+copy; the source files remain in their original host ABI. */
+#ifdef HALO_LP64_REWRITTEN
+#define HALO_GAME_ABI_LAYOUT 1
+#endif
 
 /* ---------- constants */
 

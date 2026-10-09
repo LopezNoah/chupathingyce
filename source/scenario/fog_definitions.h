@@ -10,7 +10,9 @@ header included in hcex build.
 
 /* ---------- headers */
 
-#include "math/real_math.h"
+#include <stdint.h>
+
+#include "cseries/cseries.h"
 #include "tag_files/tag_groups.h"
 
 /* ---------- constants */
@@ -32,10 +34,11 @@ struct fog_definition
 	byte unused1[0x73];
 	real plane_distance;
 	byte unused78[0x88];
-	long background_sound_index;
+	int32_t background_sound_index;
 	struct tag_reference sound_environment;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char fog_definition_size_assert[
 	sizeof(struct fog_definition) == 0x114 ? 1 : -1];
 typedef char fog_definition_plane_distance_offset_assert[
@@ -44,6 +47,7 @@ typedef char fog_definition_background_sound_offset_assert[
 	offsetof(struct fog_definition, background_sound_index) == 0x100 ? 1 : -1];
 typedef char fog_definition_sound_environment_offset_assert[
 	offsetof(struct fog_definition, sound_environment) == 0x104 ? 1 : -1];
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 /* ---------- prototypes/EXAMPLE.C */
 

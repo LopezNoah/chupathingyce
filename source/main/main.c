@@ -331,6 +331,8 @@ symbols in this file:
 
 /* ---------- headers */
 
+#include <stdint.h>
+
 #include "cseries.h"
 #include "errors.h"
 #include "cseries/profile.h"
@@ -568,10 +570,11 @@ struct _main_globals
 typedef char main_hud_globals_font_tag_index_offset_assert[
 	offsetof(struct hud_globals_definition, messaging.single_player_font.index) == 0x54 ? 1 : -1];
 
-#ifndef HALO_64BIT
+#if defined(HALO_GAME_ABI_LAYOUT) && !defined(HALO_64BIT)
 typedef char main_globals_size_assert[
 	sizeof(struct _main_globals) == 0x620 ? 1 : -1];
 #endif
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char main_globals_frame_start_milliseconds_offset_assert[
 	offsetof(struct _main_globals, frame_start_milliseconds) == 0x00 ? 1 : -1];
 typedef char main_globals_rasterizer_target_index_offset_assert[
@@ -588,7 +591,8 @@ typedef char main_globals_connection_offset_assert[
 	offsetof(struct _main_globals, connection) == 0x2C ? 1 : -1];
 typedef char main_globals_movie_offset_assert[
 	offsetof(struct _main_globals, movie) == 0x30 ? 1 : -1];
-#ifndef HALO_64BIT
+#endif
+#if defined(HALO_GAME_ABI_LAYOUT) && !defined(HALO_64BIT)
 typedef char main_globals_defer_map_change_offset_assert[
 	offsetof(struct _main_globals, defer_map_change) == 0x45 ? 1 : -1];
 typedef char main_globals_reset_map_offset_assert[
@@ -639,10 +643,10 @@ typedef char main_globals_vblank_debug_string_offset_assert[
 #endif
 struct game_options
 {
-	unsigned long flags;
+	uint32_t flags;
 	short code_version;
 	short difficulty;
-	unsigned long random_seed;
+	uint32_t random_seed;
 	char map_name[256];
 };
 

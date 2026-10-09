@@ -65,7 +65,9 @@ def rewrite(text: str) -> str:
         if match.start() < second_half_end:
             # second half of `long long`
             continue
-        after = SPACE.match(text, match.end()).end()
+        space_match = SPACE.match(text, match.end())
+        assert space_match is not None
+        after = space_match.end()
         following = WORD.match(text, after)
         following = following.group(0) if following else None
         if following == "long":
@@ -86,12 +88,15 @@ def rewrite(text: str) -> str:
 
 def read(path: Path) -> str:
     # latin-1 and newline="" keep every byte outside the rewrites as it was
-    with open(path, encoding="latin-1", newline="") as f:
-        return f.read()
+    try:
+        with open(path, encoding="latin-1", newline="") as f:
+            return f.read()
+    except OSError as error:
+        raise SystemExit(f"cannot read {path}: {error}") from error
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "LP64 source rewriter").splitlines()[0])
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("files", nargs="+", type=Path)
@@ -100,12 +105,16 @@ def main() -> None:
         if len(args.files) != 1:
             parser.error("--output takes one input")
         source = args.files[0]
-        text = f'#line 1 "{source.as_posix()}"\n' + rewrite(read(source))
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        # leave an unchanged copy alone, so that ninja's restat skips its users
-        if not args.output.is_file() or read(args.output) != text:
-            with open(args.output, "w", encoding="latin-1", newline="") as f:
-                f.write(text)
+        marker = '#define HALO_LP64_REWRITTEN 1\n' if source.suffix == ".c" else ""
+        text = marker + f'#line 1 "{source.as_posix()}"\n' + rewrite(read(source))
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            # Leave an unchanged copy alone so ninja's restat skips its users.
+            if not args.output.is_file() or read(args.output) != text:
+                with open(args.output, "w", encoding="latin-1", newline="") as f:
+                    f.write(text)
+        except OSError as error:
+            parser.error(f"cannot write {args.output}: {error}")
         return
     changed = [path for path in args.files if rewrite(read(path)) != read(path)]
     for path in changed:

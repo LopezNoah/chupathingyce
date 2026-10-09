@@ -8,6 +8,7 @@ header included in hcex build.
 #define __GAME_ENGINE_H
 #pragma once
 
+#include "cseries/cseries.h"
 #include "math/real_math.h"
 
 /* ---------- constants */
@@ -147,7 +148,10 @@ struct game_variant
 	word flags;
 };
 
+/* The host ABI does not match these Xbox game-data layouts. */
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char verify_game_variant_size[sizeof(struct game_variant) == 0x68 ? 1 : -1];
+#endif
 
 /* port: the PC version's gametype options that the Xbox's variant has not
 (its gametype editor's, port/linux/game/menu_functions.c). A saved gametype
@@ -238,7 +242,9 @@ struct game_variant_options
 	boolean no_map_weapons;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char verify_game_variant_options_size[sizeof(struct game_variant_options) == 0x1C ? 1 : -1];
+#endif
 
 struct game_engine
 {

@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, STB_DIR,
                           XDK_INCLUDE, compile_launcher, feature_defines, game_browser_defines, game_defines_and_includes, game_sources, miniupnpc_sources,
@@ -182,7 +182,10 @@ def check_sdl_commit(directory: Path) -> None:
     commit = subprocess.run(["git", "-C", str(directory), "rev-parse", "HEAD"], capture_output=True, text=True,
                             check=True).stdout.strip()
     if commit != SDL_COMMIT:
-        shutil.rmtree(directory)
+        try:
+            shutil.rmtree(directory)
+        except OSError as error:
+            raise SystemExit(f"cannot remove unpinned SDL3 checkout {directory}: {error}") from error
         raise SystemExit(f"SDL3 {SDL_TAG} is {commit}, not the pinned {SDL_COMMIT}")
 
 
@@ -206,7 +209,7 @@ def fetch_third_party() -> None:
         check_sdl_commit(SDL_DIR)
 
 
-def _musl_sources() -> List[Path]:
+def _musl_sources() -> list[Path]:
     src = MUSL_DIR / "src"
     result = set()
     for directory in MUSL_DIRECTORIES:
@@ -226,7 +229,7 @@ def _musl_sources() -> List[Path]:
     return sources
 
 
-def android_configure_inputs() -> List[Path]:
+def android_configure_inputs() -> list[Path]:
     return [Path(__file__), PORT_DIR / "guest" / "runtime", PORT_DIR / "host", LINUX_DIR / "src", *hud_configure_inputs()]
 
 
@@ -244,7 +247,10 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         print(f"Android build disabled: cannot fetch musl/SDL3 ({error})", file=sys.stderr)
         return
     import json
-    config: Dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        config: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read {config_path}: {error}") from error
 
     prebuilt = ndk / "toolchains" / "llvm" / "prebuilt"
     _host_tag = os.environ.get("ANDROID_NDK_HOST_TAG", "")
@@ -390,7 +396,8 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     # build has them: HALO_GAME_BROWSER, configure.py; and Halo PC's Custom
     # Edition maps, linux_build.py CUSTOM_EDITION_DEFINES)
     guest_abi = " ".join(GUEST_ABI_FLAGS + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else [])
-                         + game_browser_defines(sln) + feature_defines(sln) + CUSTOM_EDITION_DEFINES)
+                         + ["-DHALO_GAME_ABI_LAYOUT"] + game_browser_defines(sln)
+                         + feature_defines(sln) + CUSTOM_EDITION_DEFINES)
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [Path("tools/android_asm_convert.py"), *generated_headers]
     # profile-guided optimisation with the Linux build's profile (committed,
@@ -428,7 +435,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     n.build(outputs=libguestc, rule="android_ar", inputs=musl_objects)
 
     # the game
-    objects: List[Path] = []
+    objects: list[Path] = []
     game_flags = [
         "-std=gnu89", "-D__STRICT_ANSI__", "-w",
         "-Wno-error=incompatible-pointer-types",
@@ -574,7 +581,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
 
     # ---------- the host library
 
-    host_objects: List[Path] = []
+    host_objects: list[Path] = []
     host_obj_dir = BUILD / "host" / "obj"
     n.rule(
         name="android_host_cc",

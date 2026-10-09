@@ -28,7 +28,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .version import VERSION_SOURCES, identity_defines, release_build, version
 from .linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DIR, OPTIMISATION, STB_DIR, WINDOWS_PROFILE,
@@ -171,12 +171,12 @@ class WindowsTarget:
     triple: str
     # SDL's folder of libraries for it (lib/x86, lib/x64)
     sdl_arch: str
-    abi_flags: List[str]
-    game_flags: List[str]
-    platform_flags: List[str]
-    win32_flags: List[str]
+    abi_flags: list[str]
+    game_flags: list[str]
+    platform_flags: list[str]
+    win32_flags: list[str]
     # the link's, ahead of link-time optimisation's
-    ldflags: List[str]
+    ldflags: list[str]
     # the comment above its rules
     comment: str
     # optimised with a profile (pgo/): the committed ones are the 32-bit builds'
@@ -259,12 +259,15 @@ WINDOWS64 = WindowsTarget(
 )
 
 
-def _load_config() -> Dict[str, Any]:
-    with open(PORT_CONFIG, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_config() -> dict[str, Any]:
+    try:
+        with open(PORT_CONFIG, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read {PORT_CONFIG}: {error}") from error
 
 
-def windows_configure_inputs() -> List[Path]:
+def windows_configure_inputs() -> list[Path]:
     """Files whose change must re-run configure.py."""
     return [Path(__file__), PORT_CONFIG, PORT_DIR / "src", LINUX_DIR / "src", LINUX_DIR / "game", *hud_configure_inputs()]
 
@@ -282,8 +285,11 @@ def fetch_sdl() -> None:
     THIRD_PARTY.mkdir(parents=True, exist_ok=True)
     archive = THIRD_PARTY / f"SDL3-devel-{SDL_VERSION}-VC.zip"
     print(f"Downloading {SDL_URL}")
-    with urllib.request.urlopen(SDL_URL) as response, open(archive, "wb") as f:
-        shutil.copyfileobj(response, f)
+    try:
+        with urllib.request.urlopen(SDL_URL) as response, open(archive, "wb") as f:
+            shutil.copyfileobj(response, f)
+    except OSError as error:
+        raise SystemExit(f"cannot download SDL3: {error}") from error
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if digest != SDL_SHA256:
         archive.unlink()
@@ -309,7 +315,7 @@ PROFILE_RUNTIME_HEADERS = [
 ]
 
 
-def clang_release(cc: str) -> Optional[str]:
+def clang_release(cc: str) -> str | None:
     """the release (22.1.0) of the clang named cc, or None"""
     try:
         output = subprocess.run([cc, "--version"], capture_output=True, text=True, check=False).stdout
@@ -386,7 +392,11 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
 
 def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
     """one Windows build's rules: ``ninja windows`` or ``ninja windows64``"""
-    linux_config: Dict[str, Any] = json.loads((LINUX_DIR / "port.json").read_text(encoding="utf-8"))
+    linux_config_path = LINUX_DIR / "port.json"
+    try:
+        linux_config: dict[str, Any] = json.loads(linux_config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read {linux_config_path}: {error}") from error
     config = _load_config()
 
     prefix = target.name
@@ -464,11 +474,11 @@ def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
     else:
         base_ldflags += ["-Wl,/SUBSYSTEM:CONSOLE"]
 
-    def emit(obj_dir: Path, output: Path, extra_cflags: List[str], extra_ldflags: List[str],
-             extra_objects: List[Path], implicit_inputs: List[Path]) -> None:
+    def emit(obj_dir: Path, output: Path, extra_cflags: list[str], extra_ldflags: list[str],
+             extra_objects: list[Path], implicit_inputs: list[Path]) -> None:
         """the objects and the executable, with the given extra flags"""
         extra = " ".join(extra_cflags)
-        objects: List[Path] = []
+        objects: list[Path] = []
 
         def add_object(source: Path, cflags: str) -> None:
             obj = obj_dir / source.with_suffix(".o")
@@ -611,6 +621,7 @@ def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
     # simply goes without, and deleting it trains a new one.
     profile = pgo_profile(sln, WINDOWS_PROFILE, [LINUX_PROFILE], cc) if target.pgo else None
     if pgo_mode(sln) == "train" and profile == WINDOWS_PROFILE:
+        assert profile is not None
         release = clang_release(cc)
         if not release:
             sys.exit(f"cannot tell the release of {cc}, whose profile runtime the instrumented build needs")
@@ -621,7 +632,7 @@ def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
             f"-I{_quote(runtime / 'include')}", f"-I{_quote(runtime / 'lib' / 'profile')}",
         ])
         generate_dir = BUILD / "pgo-generate"
-        runtime_objects: List[Path] = []
+        runtime_objects: list[Path] = []
         for name in PROFILE_RUNTIME_SOURCES:
             obj = generate_dir / "profile_runtime" / name.replace(".c", ".o")
             n.build(outputs=obj, rule="windows_cc", inputs=runtime / "lib" / "profile" / name,

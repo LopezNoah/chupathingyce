@@ -10,6 +10,10 @@ header included in hcex build.
 
 /* ---------- headers */
 
+#include <stdint.h>
+
+#include "cseries/cseries.h"
+#include "math/real_math.h"
 #include "tag_files/tag_files.h"
 #include "tag_files/tag_groups.h"
 
@@ -123,10 +127,12 @@ struct player_starting_location
 	byte unused1C[0x18];
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char player_starting_location_size_assert[
 	sizeof(struct player_starting_location) == 0x34 ? 1 : -1];
 typedef char player_starting_location_game_types_offset_assert[
 	offsetof(struct player_starting_location, game_types) == 0x14 ? 1 : -1];
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 struct scenario_cutscene_camera_point
 {
@@ -146,15 +152,17 @@ struct scenario_decal_palette_entry
 
 struct scenario_structure_bsp_reference
 {
-	long file_offset;
-	long file_size;
+	int32_t file_offset;
+	int32_t file_size;
 	XPTR(void) base_address; /* tag data: an Xbox address */
 	byte unusedC[4];
 	struct tag_reference structure_bsp;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char scenario_structure_bsp_reference_size_assert[
 	sizeof(struct scenario_structure_bsp_reference) == 0x20 ? 1 : -1];
+#endif
 
 struct scenario_trigger_volume
 {
@@ -175,8 +183,10 @@ struct scenario_trigger_volume
 	};
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char scenario_trigger_volume_size_assert[
 	sizeof(struct scenario_trigger_volume) == 0x60 ? 1 : -1];
+#endif
 
 struct scenario_starting_profile_weapon
 {
@@ -196,8 +206,10 @@ struct scenario_starting_profile
 	byte pad[22];
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char scenario_starting_profile_size_assert[
 	sizeof(struct scenario_starting_profile) == 0x68 ? 1 : -1];
+#endif
 
 struct encounter_player_starting_location
 {

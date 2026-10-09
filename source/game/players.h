@@ -10,6 +10,9 @@ header included in hcex build.
 
 /* ---------- headers */
 
+#include <stdint.h>
+
+#include "cseries/cseries.h"
 #include "game/game.h"
 #include "networking/network_connection.h"
 
@@ -51,7 +54,7 @@ enum player_action_result
 
 struct player_action
 {
-	unsigned long control_flags;
+	uint32_t control_flags;
 	real_euler_angles2d desired_facing;
 	real_vector2d throttle;
 	real primary_trigger;
@@ -61,12 +64,14 @@ struct player_action
 	short pad;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char player_action_size_assert[
 	sizeof(struct player_action) == 0x20 ? 1 : -1];
 typedef char player_action_desired_facing_yaw_offset_assert[
 	offsetof(struct player_action, desired_facing.yaw) == 0x4 ? 1 : -1];
 typedef char player_action_desired_facing_pitch_offset_assert[
 	offsetof(struct player_action, desired_facing.pitch) == 0x8 ? 1 : -1];
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 struct network_player
 {
@@ -145,6 +150,7 @@ struct players_globals
 	unsigned long combined_pvs_local[16];
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char players_globals_local_player_count_offset_assert[
 	offsetof(struct players_globals, local_player_count) == 0x24 ? 1 : -1];
 typedef char players_globals_respawn_failure_offset_assert[
@@ -176,6 +182,7 @@ typedef char player_datum_quit_out_of_game_offset_assert[
 	offsetof(struct player_datum, quit_out_of_game) == 0xD1 ? 1 : -1];
 typedef char player_datum_size_assert[
 	sizeof(struct player_datum) == 0xD4 ? 1 : -1];
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 struct unit_camera;
 
@@ -210,6 +217,7 @@ struct player_control
 	real pitch_maximum;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char player_control_size_assert[
 	sizeof(struct player_control) == 0x40 ? 1 : -1];
 typedef char player_control_unit_index_offset_assert[
@@ -238,10 +246,11 @@ typedef char player_control_pitch_minimum_offset_assert[
 	offsetof(struct player_control, pitch_minimum) == 0x38 ? 1 : -1];
 typedef char player_control_pitch_maximum_offset_assert[
 	offsetof(struct player_control, pitch_maximum) == 0x3C ? 1 : -1];
-#ifndef HALO_64BIT
+#if defined(HALO_GAME_ABI_LAYOUT) && !defined(HALO_64BIT)
 typedef char player_control_unit_camera_info_size_assert[
 	sizeof(struct player_control_unit_camera_info) == 0x18 ? 1 : -1];
-#endif
+#endif /* HALO_GAME_ABI_LAYOUT && !HALO_64BIT */
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 /* ---------- prototypes/PLAYER_CONTROL.C */
 

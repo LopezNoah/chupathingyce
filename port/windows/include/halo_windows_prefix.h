@@ -16,12 +16,13 @@ much shorter than the Linux build's halo_linux_prefix.h.
 #endif
 
 #define HALO_WINDOWS 1
+#define HALO_GAME_ABI_LAYOUT 1
 
 /* ---------- pointers inside Xbox data (the 64-bit builds': ninja windows64;
 no-ops in the 32-bit build, as in the Linux build: the shared sources name
 them) */
 
-#include "../../../source/cseries/xbox_address.h"
+#include "../../../source/cseries/xbox_address.h" // IWYU pragma: keep
 
 /* ---------- the C runtime functions the game calls undeclared
 
@@ -83,7 +84,7 @@ alike (the Windows-facing units never see this header) */
 
 /* ---------- Xbox functions named like Windows functions */
 
-#include "halo_windows_api_names.h"
+#include "halo_windows_api_names.h" // IWYU pragma: keep
 
 /* ---------- Winsock and source fixups shared with the Linux build */
 
@@ -92,7 +93,7 @@ alike (the Windows-facing units never see this header) */
 also defines (see crt/string.h) */
 #define strnlen halo_game_strnlen
 #include "../../linux/include/halo_linux_winsock_names.h"
-#include "../../linux/include/halo_linux_source_fixups.h"
+#include "../../linux/include/halo_linux_source_fixups.h" // IWYU pragma: keep
 #endif
 
 #include <stddef.h>

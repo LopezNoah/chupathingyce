@@ -779,6 +779,7 @@ struct statistic_buffer
 	long place;
 };
 
+#ifdef HALO_GAME_ABI_LAYOUT
 typedef char verify_statistic_buffer_size[
 	sizeof(struct statistic_buffer) == 0x1C ? 1 : -1];
 typedef char verify_netgame_goal_size[sizeof(struct netgame_goal) == 0x20 ? 1 : -1];
@@ -798,6 +799,7 @@ typedef char verify_game_engine_stage_variant_offset[
 	offsetof(struct game_engine_stage, variant) == 0x40 ? 1 : -1];
 typedef char verify_game_engine_stage_size[
 	sizeof(struct game_engine_stage) == 0xA8 ? 1 : -1];
+#endif /* HALO_GAME_ABI_LAYOUT */
 
 /* ---------- prototypes */
 

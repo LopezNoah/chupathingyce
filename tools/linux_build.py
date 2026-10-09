@@ -12,7 +12,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 from .embed_assets import hud_assets_build, hud_configure_inputs, ui_fonts_build
 from .ninja_syntax import Writer
@@ -25,11 +25,11 @@ PORT_CONFIG = PORT_DIR / "port.json"
 XDK_INCLUDE = Path("port/include/xdk")
 
 
-def xdk_headers() -> List[Path]:
+def xdk_headers() -> list[Path]:
     return sorted(XDK_INCLUDE.glob("*.h"))
 
 
-def game_sources(config: Dict[str, Any]) -> List[Path]:
+def game_sources(config: dict[str, Any]) -> list[Path]:
     """the game's C sources (port.json "game"): every one under its root but
     those excluded"""
     game = config["game"]
@@ -40,7 +40,7 @@ def game_sources(config: Dict[str, Any]) -> List[Path]:
     )
 
 
-def game_defines_and_includes(config: Dict[str, Any]) -> str:
+def game_defines_and_includes(config: dict[str, Any]) -> str:
     """the game sources' defines and include directories (port.json "game")"""
     game = config["game"]
     return " ".join(
@@ -142,7 +142,7 @@ MINIUPNPC_DEFINES = ["-DMINIUPNP_STATICLIB", "-DMINIUPNPC_SET_SOCKET_TIMEOUT", "
                      "-D_BSD_SOURCE", "-D_DEFAULT_SOURCE"]
 
 
-def miniupnpc_sources() -> List[Path]:
+def miniupnpc_sources() -> list[Path]:
     """miniupnpc's library sources (port/third_party/miniupnpc/src)"""
     return sorted((MINIUPNPC_DIR / "src").glob("*.c"))
 
@@ -196,7 +196,7 @@ PROFILE_USE_FLAGS = [
 ]
 
 
-def musl_math_sources() -> List[Path]:
+def musl_math_sources() -> list[Path]:
     """musl's maths functions the game uses (port/third_party/musl-math)"""
     return sorted((MUSL_MATH_DIR / "src").glob("*.c"))
 
@@ -218,13 +218,13 @@ def musl_math_cflags(abi: str) -> str:
 CUSTOM_EDITION_DEFINES = ["-DHALO_CUSTOM_EDITION"]
 
 
-def game_browser_defines(sln: Any) -> List[str]:
+def game_browser_defines(sln: Any) -> list[str]:
     """configure.py --game-browser: the game list and server browser
     (port/linux/src/browser.c), on unless --no-game-browser"""
     return ["-DHALO_GAME_BROWSER"] if getattr(sln, "game_browser", False) else []
 
 
-def feature_defines(sln: Any) -> List[str]:
+def feature_defines(sln: Any) -> list[str]:
     """configure.py --infection / --bots: experimental gameplay features,
     compiled in only when asked for (off by default). Off, their integration
     units build as no-ops and their settings are not offered."""
@@ -245,7 +245,7 @@ def lto_mode(sln: Any) -> str:
     return getattr(sln, "port_lto", "full")
 
 
-def lto_flags(sln: Any, cache_dir: Path) -> Tuple[List[str], List[str]]:
+def lto_flags(sln: Any, cache_dir: Path) -> Tuple[list[str], list[str]]:
     """compiler and linker flags for link-time optimisation with lld"""
     mode = lto_mode(sln)
     if mode == "off":
@@ -265,7 +265,7 @@ LINUX_PROFILE = PGO_DIR / "halo_linux.profdata"
 WINDOWS_PROFILE = PGO_DIR / "halo_windows.profdata"
 PROFILE_LLVM_MAJOR = 22
 
-_clang_majors: Dict[str, Optional[int]] = {}
+_clang_majors: dict[str, Optional[int]] = {}
 
 
 def clang_major(cc: str) -> Optional[int]:
@@ -309,16 +309,19 @@ def pgo_profile(sln: Any, own: Optional[Path], others: Sequence[Path], cc: str) 
     return None
 
 
-def profile_use_flags(profile: Any) -> List[str]:
+def profile_use_flags(profile: Any) -> list[str]:
     return [f"-fprofile-use={_quote(profile)}", *PROFILE_USE_FLAGS] if profile else []
 
 
-def _load_port_config() -> Dict[str, Any]:
-    with open(PORT_CONFIG, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_port_config() -> dict[str, Any]:
+    try:
+        with open(PORT_CONFIG, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read {PORT_CONFIG}: {error}") from error
 
 
-def linux_configure_inputs() -> List[Path]:
+def linux_configure_inputs() -> list[Path]:
     """Files whose change must re-run configure.py."""
     if not PORT_CONFIG.is_file():
         return [Path(__file__)]
@@ -339,36 +342,36 @@ class Linux32Units:
     """What the 32-bit units are built for: `ninja linux` (the defaults) or
     the 32-bit dedicated server (tools/server_build.py)."""
     sln: Any
-    config: Dict[str, Any]
+    config: dict[str, Any]
     # the game list and the dedicated server (HALO_GAME_BROWSER)
     game_browser: bool
     semantics_header: Path
     platform_semantics_header: Path
-    embedded_assets: List[Path]
+    embedded_assets: list[Path]
     # the compile rule
     rule: str = "linux_cc"
     # the target, in place of LINUX_ABI_FLAGS's and POSIX_FLAGS's first two
-    target_flags: List[str] = field(default_factory=lambda: list(LINUX_TARGET_FLAGS))
+    target_flags: list[str] = field(default_factory=lambda: list(LINUX_TARGET_FLAGS))
     # more flags for every unit (after the ABI's)
-    extra_flags: List[str] = field(default_factory=list)
+    extra_flags: list[str] = field(default_factory=list)
     # platform units left out ("port/linux/src/name.c")
-    excluded: Set[str] = field(default_factory=set)
+    excluded: set[str] = field(default_factory=set)
     # more platform units, with the platform layer's flags (after port/linux/src's)
-    platform_sources: List[Path] = field(default_factory=list)
+    platform_sources: list[Path] = field(default_factory=list)
     # more units with the host's ABI, as posix_*.c (after the platform units)
-    native_sources: List[Path] = field(default_factory=list)
+    native_sources: list[Path] = field(default_factory=list)
     # include flags for the platform and host-ABI units (SDL's headers)
-    include_flags: List[str] = field(default_factory=list)
+    include_flags: list[str] = field(default_factory=list)
 
 
-def _retarget(flags: List[str], target_flags: List[str]) -> List[str]:
+def _retarget(flags: list[str], target_flags: list[str]) -> list[str]:
     """flags (LINUX_ABI_FLAGS or POSIX_FLAGS) for another target"""
     assert flags[:len(LINUX_TARGET_FLAGS)] == LINUX_TARGET_FLAGS
     return [*target_flags, *flags[len(LINUX_TARGET_FLAGS):]]
 
 
-def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags: List[str],
-                    implicit_inputs: List[Path]) -> List[Path]:
+def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags: list[str],
+                    implicit_inputs: list[Path]) -> list[Path]:
     """the 32-bit units' objects, in link order, with the given extra flags"""
     sln = units.sln
     config = units.config
@@ -390,7 +393,7 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
     # optimise them together with code that has a 16-bit one: they stay
     # native objects
     posix_extra = " ".join(flag for flag in extra_cflags if not flag.startswith("-flto"))
-    objects: List[Path] = []
+    objects: list[Path] = []
 
     def add_object(source: Path, cflags: str, posix: bool = False) -> None:
         obj = obj_dir / source.with_suffix(".o")
@@ -594,8 +597,8 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
                          semantics_header=semantics_header, platform_semantics_header=platform_semantics_header,
                          embedded_assets=embedded_assets)
 
-    def emit(obj_dir: Path, output: Path, extra_cflags: List[str], extra_ldflags: List[str],
-             implicit_inputs: List[Path], validator: Optional[Path] = None) -> None:
+    def emit(obj_dir: Path, output: Path, extra_cflags: list[str], extra_ldflags: list[str],
+             implicit_inputs: list[Path], validator: Optional[Path] = None) -> None:
         """the objects and the executable, with the given extra flags (and
         the tag validator alone, tools/map_validate.c, as validator)"""
         objects = linux32_objects(n, units, obj_dir, extra_cflags, implicit_inputs)
@@ -642,6 +645,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
     # simply goes without, and deleting it trains a new one.
     profile = pgo_profile(sln, LINUX_PROFILE, [], cc)
     if pgo_mode(sln) == "train" and profile == LINUX_PROFILE:
+        assert profile is not None
         instrumented = build_dir / "pgo-generate" / "halo"
         emit(build_dir / "pgo-generate" / "obj", instrumented, ["-fprofile-generate"], ["-fprofile-generate"], [])
         n.build(

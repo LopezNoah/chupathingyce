@@ -177,6 +177,10 @@ if f"\nbuild {default}: " in out.getvalue():
     n.comment("Default rule: the build for this computer")
     n.default(default)
 
-with open("build.ninja", "w", encoding="utf-8") as f:
-    f.write(out.getvalue())
-out.close()
+try:
+    with open("build.ninja", "w", encoding="utf-8") as f:
+        f.write(out.getvalue())
+except OSError as error:
+    parser.error(f"cannot write build.ninja: {error}")
+finally:
+    out.close()

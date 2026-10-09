@@ -1,10 +1,92 @@
-# Infection — offline rules prototype
+# Infection — offline rules prototype and local in-game adapter
 
-**Status: Milestone 1 complete in a controlled participant harness. Infection is
-not yet selectable or playable inside Halo CE.** The game build compiles the
-rules module, but does not invoke it. This is not a networked Infection release.
-See [the implementation report](infection-implementation.md) for integration
-work still required.
+**Status: Milestone 1 (rules prototype) complete. Milestone 2 (local in-game
+adapter) is in progress: local split-screen Blood Gulch Infection runs through
+the real game, but it is experimental, disabled by default, and not in any menu.
+It is not networked.** Online hosts and clients always play ordinary Slayer. See
+[the implementation report](infection-implementation.md) for work still required.
+
+## Local in-game Infection (Milestone 2, experimental)
+
+Local split-screen only, with no server. It needs your own Xbox-format CE maps
+(`bloodgulch.map` and `ui.map`). Enable it with settings or environment
+variables:
+
+| Setting | Environment | Default |
+| --- | --- | --- |
+| `infection.local_enabled` | `HALO_INFECTION_LOCAL` | false |
+| `infection.rounds` | `HALO_INFECTION_ROUNDS` | 3 |
+| `infection.round_seconds` | `HALO_INFECTION_SECONDS` | 180 |
+| `infection.alpha_count` | `HALO_INFECTION_ALPHAS` | 0 (automatic) |
+| `infection.respawn_seconds` | `HALO_INFECTION_RESPAWN` | 3 |
+| `infection.shotgun_rounds` | `HALO_INFECTION_SHOTGUN_ROUNDS` | 18 (loaded + reserve) |
+| `infection.pistol_rounds` | `HALO_INFECTION_PISTOL_ROUNDS` | 36 (loaded + reserve) |
+| `infection.seed` | `HALO_INFECTION_SEED` | 0 (automatic) |
+| `debug.infection_test_map` | `HALO_INFECTION_TEST_MAP` | empty; e.g. `bloodgulch` launches a local game from the main menu |
+| `debug.infection_test_players` | `HALO_INFECTION_TEST_PLAYERS` | 2 (2–4 split-screen players) |
+| `debug.infection_test_scenario` | `HALO_INFECTION_TEST_SCENARIO` | empty (manual play); `lifecycle`, `melee`, `melee-full` and `slayer-control` are test fixtures only |
+
+What the local adapter does now:
+
+- Survivors spawn with a shotgun and pistol and no grenades. Infected spawn with
+  no weapons and no grenades.
+- Infected cannot fire, throw grenades, swap weapons, use the action button, or
+  pick up weapons or ammunition. They attack with the game's existing unarmed
+  melee, which one-hit kills a full-health Spartan face to face (measured).
+
+  > **Note — energy sword:** Infected are meant to carry an energy sword. Halo CE
+  > has no playable energy sword in multiplayer (the sword only exists as an
+  > AI-only Elite weapon), so it can't be used here without new assets or map
+  > edits. Infected use unarmed melee instead.
+- When a Survivor becomes Infected, they join the Infected team immediately,
+  on the same tick they die and before they respawn. Survivors are the blue
+  team and Infected the red team, matching the scoreboard colours.
+- Vehicles are turned off. Infected also cannot enter vehicles, because CE
+  uses the action button to board and that button is blocked for them.
+- Spawns are faction-aware: points within 8 world units (about 24 m) of a
+  living enemy are almost never chosen, and points further away are preferred.
+- Any Survivor death, including suicide or environmental death, converts that
+  player to Beta Infected. Infected respawn after the configured delay. Survivors
+  do not respawn.
+- Personal scores use the rules defaults. Slayer team scores are not used.
+- The game resets units between rounds without scoring the reset as deaths.
+- Players see faction colours and a text status line with role, round, time,
+  Survivor count, score, and phase ("Last Spartan Standing!" for the final
+  Survivor). At round end each player sees "Your team won/lost" for their
+  current faction. The postgame report shows faction names and Infection
+  scores. All of this was checked in screenshots.
+- Combat is disabled during countdown and results phases.
+
+Not done yet: Infected movement or other traits, adjustable melee strength,
+Last Spartan effects beyond the numeric bonus, menu selection, networking, and
+bots. Split-screen players in the isolated test have no profile names, so the
+score lists show blank names.
+
+Automated real-game tests (they build, launch a hidden window, and check the log):
+
+```sh
+M="$HOME/Library/Application Support/ChupathingyCE/maps"
+python3 tools/test_infection_local.py --maps "$M" --scenario melee
+python3 tools/test_infection_local.py --maps "$M" --scenario lifecycle
+python3 tools/test_infection_local.py --maps "$M" --scenario melee-full
+python3 tools/test_infection_local.py --maps "$M" --scenario slayer-control
+```
+
+`melee-full` strikes a full-health, face-to-face Survivor (up to 12 times)
+and reports how many strikes it took. `slayer-control` runs with Infection
+**disabled**. It plays a real Slayer kill and checks that the adapter stays
+off, Slayer scores the kill (1/0), and the map's Slayer loadout is the same at
+spawn and respawn. Every scenario also checks spawn distances, team changes
+and zero vehicles.
+
+`melee` checks that the Infected pistol pickup and ranged inputs are blocked,
+then kills a deliberately wounded Survivor with normal unarmed melee input.
+`lifecycle` uses three players and three rounds. It checks Survivor-kills-Alpha,
+Alpha respawn, infection, Beta respawn, environmental death, suicide, both
+victory types, ammunition, stable player identities, and seeded final scores of
+3/8/10. Fixtures use real damage and death paths, and use positions or wounds
+only to make the tests deterministic. If the log contains "window closed", an
+outside quit event interrupted the run; run it again.
 
 ## Run the prototype
 

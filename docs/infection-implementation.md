@@ -157,9 +157,114 @@ spawns, trait cleanup on units, HUD/postgame integration, live Slayer gameplay,
 or unsupported-client admission to a custom session. These require later
 milestones; passing a local rules event test is not a networking test.
 
+## Milestone 2 progress: local in-game adapter (in progress)
+
+Milestone 1 was committed as `1b7c7edc`. Milestone 2 work is uncommitted.
+
+Added files:
+
+- `source/game/game_engine_infection.{c,h}`: local-only adapter
+- `tools/test_infection_local.py`: real-game launcher
+- `tools/check_infection_local_log.py`: real-game log checker
+
+Changed tracked files:
+
+- `game_engine.c/.h`: adapter selection, death, spawn, end, colour, message, and
+  damage hooks; exposes the loadout weapon resolver; refuses Infection network
+  state
+- `game.c`: commits the rules tick after objects and players update
+- `players.c`: filters player actions
+- `main.c`: calls the local launcher
+- `port_config.c`: settings
+- `items/weapons.c`: ammo-scavenging gate
+
+Activation requires a local connection, Slayer, and `infection.local_enabled`.
+No engine ID, variant layout, packet, or Delta capability changed. Non-local
+connections keep ordinary Slayer. If the connection changes during a game, the
+adapter faults and stops rather than continuing as Infection.
+
+Defects found by real-game tests and fixed:
+
+1. **Survivor loadout failed at spawn.** `unit_add_weapon_to_inventory` applies
+   the engine pickup callback even to starting weapons. Spawns happen during
+   Countdown, when the Infection pickup policy refuses everything. The fix
+   allows only the specific weapon object currently being granted.
+2. **Survivors gained ammo during Countdown.** Ammo merging
+   (`weapon_handle_potential_inventory_item`) bypasses the pickup callback, so a
+   separate gate now applies in Infection.
+3. **Ammo was double-counted.** In CE, `rounds_total` includes the loaded
+   rounds. The loadout now uses `weapon_set_total_rounds`.
+4. **Infected could keep their held weapon.** `unit_delete_all_weapons` keeps the
+   currently held weapon. A full strip now removes it too.
+
+Real-game evidence from macOS/Apple silicon, Blood Gulch, hidden window, no
+server, `--no-build` reruns after the final build:
+
+| Check | Result |
+| --- | --- |
+| `tools/test_infection_local.py --scenario melee` | Passed: Infected pistol grant refused; ranged/grenade/zoom/swap input cleared; normal melee input killed the wounded Survivor and Infected won |
+| `tools/test_infection_local.py --scenario lifecycle` | Passed: 12 real spawns, stable player datums, increasing life IDs, expected roles/teams/ammo, round winners Infected/Infected/Survivors, final scores 3/8/10 |
+| One earlier lifecycle run | Interrupted in round 3 by an SDL window-close/quit event; the identical rerun passed. The checker now reports this case explicitly |
+| Rules tests and legacy network-message regression | Passed again |
+
+Team changes are logged. The checker requires every converted player to switch
+`Survivors -> Infected` (while still dead) before that player's next spawn. It
+also requires zero vehicles at the start of each active round; the variant's
+vehicle set is "none". Players with no role yet stay on the Survivors team until
+the Alpha is chosen.
+
+Energy sword: the design calls for Infected to use an energy sword. CE has no
+playable multiplayer energy sword (only an AI-only Elite weapon), so Infected
+use unarmed melee. A sword would need new assets or map edits, which this
+project avoids.
+
+The unarmed-melee test uses a 5%-health target. It proves the impact and kill
+path, but not the number of hits a full-health Spartan takes.
+
+### Milestone 2 completion work
+
+- **Visual check (screenshots via `debug.screenshot_directory`).** The status
+  line renders for both roles, including "Last Spartan Standing!". The Alpha has
+  no weapon or ammo HUD, and the Survivor holds a shotgun. The postgame report
+  shows Survivors/Infected and the Infection score column.
+- **Bug: "Your team won/lost" was wrong.** `did_player_win` returned the top
+  *personal* score, so the winning Alpha saw "lost". It now uses the last
+  round's winning faction and the player's current faction. Confirmed in
+  screenshots.
+- **Bug: scoreboard colours didn't match.** Survivors were team 0, which CE
+  draws red, while their bodies are blue. Survivors are now team 1 (blue) and
+  Infected team 0 (red), set through named constants.
+- **Faction-aware spawns** use the existing `starting_location_rating`
+  callback. Before the change, a respawned Alpha appeared 5.5 units from a
+  Survivor. After it, every spawn with a living enemy was 93–116 units
+  away, and the checker requires at least 8.
+- **Full-health melee measured.** Unarmed melee uses the biped's own
+  `characters\cyborg\melee` damage. It killed a full-health, face-to-face
+  Spartan (`facing_dot=-1.000`) in **one** strike. The first measurement hit
+  the target's back, which is CE's instant kill, so the fixture now turns the
+  target to face the attacker. One-hit kills match the intended sword design;
+  adjustable strength is left for Milestone 4 traits.
+- **Vehicles.** The vehicle set is "none" (0 vehicles every round on Blood
+  Gulch), and Infected can't use the action button that boards vehicles.
+- **Ordinary Slayer regression.** `slayer-control` runs with Infection disabled
+  through the same launcher. Result: adapter inactive, a real kill scored 1/0,
+  and Blood Gulch's Slayer loadout (1 weapon, no grenades) was the same at spawn
+  and respawn. Every Infection hook returns immediately when disabled. Other
+  modes (CTF, Oddball, King, Race) were not played in-game.
+
+All five real-game scenarios pass: `lifecycle`, `melee`, `melee-full`,
+`slayer-control`, plus the earlier wounded-target run. The rules tests and the
+legacy network-message regression also pass.
+
+Known limits that don't block local play:
+
+- the isolated test has no profiles, so names are blank
+- other modes were not played in-game
+- a human hasn't played it with controllers yet; all play so far was scripted
+
 ## Remaining milestones, in order
 
-1. **Milestone 2:** map opaque admission handles onto actual host player datums
+1. **Milestone 2 (remaining):** map opaque admission handles onto actual host player datums
    (and bot participants); drive real death callbacks and normal respawn; update
    player/team/lobby representations consistently; bypass Slayer awards, team
    balancing, suicide/betrayal/lives penalties only for Infection; freeze

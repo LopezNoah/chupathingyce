@@ -279,6 +279,7 @@ symbols in this file:
 #include "units/biped_definitions.h"
 #include "units/bipeds.h"
 #include "units/units.h"
+#include "game/game_engine_infection.h"
 #include "units/vehicle_definitions.h"
 #include "units/vehicles.h"
 #ifdef HALO_64BIT
@@ -4515,6 +4516,8 @@ void players_update_before_game(
 		{
 			action_index = (short)iterator.datum_index;
 			action = &actions[action_index];
+			/* Host/local rules restrict all input sources, not only a pad. */
+			infection_game_filter_action(iterator.datum_index, action);
 			match_assert(
 				"c:\\halo\\SOURCE\\game\\players.c",
 				0x256,

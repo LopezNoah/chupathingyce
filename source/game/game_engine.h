@@ -378,6 +378,9 @@ void game_variant_options_default(
 void game_engine_playlist_initialize(
 	void);
 
+/* Existing map/global loadout resolver, also used by local Infection. */
+long game_engine_loadout_weapon_definition(byte weapon);
+
 long game_globals_get_weapon(
 	struct game_globals *game_globals,
 	long weapon_list_index);

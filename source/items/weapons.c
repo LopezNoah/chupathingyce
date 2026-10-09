@@ -220,6 +220,7 @@ symbols in this file:
 #include "game/cheats.h"
 #include "game/game.h"
 #include "game/game_engine.h"
+#include "game/game_engine_infection.h"
 #include "game/players.h"
 #include "interface/first_person_weapons.h"
 #include "math/periodic_functions.h"
@@ -1089,6 +1090,10 @@ boolean weapon_handle_potential_inventory_item(
 	long item_definition_index = item->definition_index;
 	boolean handled = FALSE;
 	short magazine_index;
+
+	/* Ammo scavenging bypasses unit_add_weapon_to_inventory's pickup
+	 * callback. Gate it independently during local Infection countdown. */
+	if (infection_game_active() && !infection_game_can_collect_items(weapon->object.owner_player_index)) return FALSE;
 
 	for (magazine_index = 0; magazine_index<weapon_magazine_count(weapon_definition); ++magazine_index)
 	{

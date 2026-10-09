@@ -187,6 +187,7 @@ struct game_options;
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "bots.h" /* port: computer-controlled players */
 #include "navigation_world.h"
+#include "game_engine_infection.h"
 #ifdef HALO_64BIT
 #include "forge.h" /* port: port/linux/game/forge.c */
 #endif
@@ -373,6 +374,8 @@ void game_tick(
 	recorded_animations_update();
 	objects_update();
 	players_update_after_game();
+	/* Commit every death of this tick together, after object damage. */
+	infection_game_end_tick();
 	hud_update();
 	player_effect_update();
 	/* port: and at its end, before the frame draws the lights */

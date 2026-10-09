@@ -542,6 +542,7 @@ symbols in this file:
 #include "aim_assist.h"
 #include "game_engine.h"
 #include "game_engine_list.h"
+#include "game_engine_infection.h"
 #include "game_engine_place.h"
 
 #include "bitmaps/bitmap_group.h"
@@ -4507,6 +4508,13 @@ void game_engine_player_killed(
 
 	if (!game_engine)
 		return;
+	/* Local Infection owns conversion and respawn, with no Slayer awards,
+	 * auto-balancing or suicide/betrayal penalties. */
+	if (infection_game_active())
+	{
+		infection_game_player_killed(killing_player_index, dead_player_index);
+		return;
+	}
 
 	/* the distributed netcode: a client's copy of a death has the host's
 	killer (port/linux/game/network_distributed.c) */
@@ -5090,6 +5098,8 @@ boolean game_engine_should_end_game(
 {
 	boolean should_end_game = FALSE;
 
+	if (infection_game_active())
+		return infection_game_should_end();
 	if (game_engine && !multiple_teams_alive())
 		should_end_game = TRUE;
 	/* port: the gametype's time limit (game_variant_options) */
@@ -6787,6 +6797,11 @@ real_rgb_color *game_engine_player_get_change_color(
 	struct player_datum *player = player_get(player_index);
 	real_rgb_color result;
 
+	if (infection_game_active())
+	{
+		infection_game_color(player_index, change_color);
+		return change_color;
+	}
 	if (global_variant.universal_variant.teams)
 	{
 		if (player->team_index == 0)
@@ -7003,6 +7018,7 @@ void game_engine_initialize(
 		game_engine_variant_cleanup(&global_variant);
 		/* port: the cleaned variant's (the one given may be any number) */
 		game_engine = game_engines[global_variant.game_engine_index];
+		game_engine = infection_game_select(game_engine, &global_variant);
 	}
 
 	return;
@@ -7382,6 +7398,8 @@ real game_engine_get_damage_multiplier(
 {
 	real result = 1.0f;
 
+	if (infection_game_active())
+		result = infection_game_damage_multiplier(damaging_player_index, damaged_player_index);
 	if (game_engine)
 		result /= PIN(global_variant.universal_variant.health, 0.25f, 4.0f);
 
@@ -8702,7 +8720,7 @@ static void handle_custom_starting_equipment(
 /* port: a custom loadout's weapon's place in the globals' weapon list
 (game_engine_h's _loadout_weapon_*, from the assault rifle); random: one
 of those the map has */
-static long game_engine_loadout_weapon_definition(
+long game_engine_loadout_weapon_definition(
 	byte weapon)
 {
 	static short const list_indices[] =
@@ -8891,6 +8909,8 @@ boolean game_engine_get_state_message(
 	long respawn_timer;
 	boolean result = FALSE;
 
+	if (infection_game_active())
+		return infection_game_message(player_index, message, message_character_count);
 	if (game_engine)
 	{
 		player = player_get(player_index);
@@ -8993,6 +9013,8 @@ boolean game_engine_should_spawn_player(
 {
 	boolean should_spawn = FALSE;
 
+	if (infection_game_active())
+		return infection_game_should_spawn(player_index);
 	if (game_engine)
 	{
 		struct player_datum *player = player_get(player_index);
@@ -9238,6 +9260,9 @@ long game_engine_write_network_state(
 	long postgame_state;
 	long written;
 
+	/* This experimental mode must never be sent as ordinary Slayer. */
+	if (infection_game_active())
+		return 0;
 	if (!game_engine || size < (long)sizeof(postgame_state))
 		return 0;
 	/* whether the game is over, then the game type's */
@@ -9266,6 +9291,8 @@ void game_engine_read_network_state(
 	boolean first;
 	boolean read;
 
+	if (infection_game_active())
+		return;
 	if (!game_engine || size < (long)sizeof(postgame_state))
 		return;
 	csmemcpy(&postgame_state, buffer, sizeof(postgame_state));

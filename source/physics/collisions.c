@@ -96,6 +96,7 @@ symbols in this file:
 #include "cseries.h"
 #include "cseries/errors.h" /* port: error */
 #include "collisions.h"
+#include "extensions/extension_api.h"
 
 #include "breakable_surfaces.h"
 #include "bsp3d.h"
@@ -401,6 +402,17 @@ boolean collision_test_sphere(
 	boolean result;
 	struct collision_bsp_test_sphere_result sphere_result;
 
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+	{
+		struct collision_result extra;
+		real_vector3d zero;
+		extra.t = 1.0f;
+		set_real_vector3d(&zero, 0.0f, 0.0f, 0.0f);
+		if (halo_extensions_world_test_point(center) ||
+			halo_extensions_world_test_vector(0, center, &zero, radius, &extra))
+			return TRUE;
+	}
+#endif
 	if (bsp3d_test_point(global_bsp3d_get(), 0, center) != NONE)
 	{
 		result = collision_bsp_test_sphere(
@@ -433,6 +445,13 @@ boolean collision_test_point(
 		goto no_collision;
 	}
 
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+	if (TEST_FLAG(flags, _collision_test_structure_bit) &&
+		halo_extensions_world_test_point(point))
+	{
+		goto collision;
+	}
+#endif
 	leaf_index = bsp3d_test_point(global_bsp3d_get(), 0, point);
 	test_objects = TEST_FLAG(flags, _collision_test_objects_bit);
 	if (debug_collision_skip_objects)
@@ -687,6 +706,13 @@ boolean collision_test_vector(
 				collision_usage_times.vector_objects.QuadPart);
 		}
 
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+		if (TEST_FLAG(flags, _collision_test_structure_bit) &&
+			halo_extensions_world_test_vector(flags, point, vector, 0.0f, collision))
+		{
+			hit = TRUE;
+		}
+#endif
 		if (!hit)
 		{
 			collision->t = 1.0f;
@@ -785,6 +811,14 @@ boolean collision_test_pill(
 		collision->location.cluster_index = cluster_index;
 	}
 
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+	if (TEST_FLAG(flags, _collision_test_structure_bit))
+	{
+		if (!hit) collision->t = 1.0f;
+		if (halo_extensions_world_test_vector(flags, point, vector, radius, collision))
+			hit = TRUE;
+	}
+#endif
 	if (!hit)
 	{
 		collision->t = 1.0f;
@@ -973,6 +1007,12 @@ boolean collision_get_features_in_sphere(
 			collision_usage_times.features.QuadPart);
 	}
 
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+	if (structure_flags)
+	{
+		halo_extensions_world_get_features(center, radius, height, width, features);
+	}
+#endif
 	return features->count[_collision_feature_sphere] != 0 ||
 		features->count[_collision_feature_cylinder] != 0 ||
 		features->count[_collision_feature_prism] != 0;
@@ -1177,7 +1217,13 @@ boolean collision_test_pill_new(
 	collision->plane.n.i = 0.0f;
 	collision->plane.n.j = 0.0f;
 	collision->plane.n.k = 0.0f;
-
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+	if (TEST_FLAG(flags, _collision_test_structure_bit) &&
+		halo_extensions_world_test_vector(flags, point, vector, radius, collision))
+	{
+		result = TRUE;
+	}
+#endif
 	return result;
 }
 

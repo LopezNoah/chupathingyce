@@ -28,6 +28,14 @@ xbox/
 !port/assets/
 original/
 
+# Local Blender/Forge binary assets; inventory and rebuild script remain tracked.
+# See blender/README.md for expected files and how to supply/rebuild them.
+/blender/*.blend*
+/blender/*.glb
+/blender/*.png
+/blender/*.jpg
+/blender/*.jpeg
+
 # CI build outputs (tools/ci_build.py)
 dist/
 

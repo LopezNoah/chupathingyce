@@ -8,11 +8,11 @@ Recorded after the initial local Forge implementation and runtime checks.
 - Forge has its own active state rather than using `game_in_editor()`, whose broader engine effects are unsuitable for this mode.
 - Edits are persisted in a separate `forge/<map>.forge.json` overlay under the data root. Original `.map` files are not modified. The overlay identifies the map/scenario and cache checksum so incompatible edits are not applied.
 - It supports a flying camera; selection and manipulation of map-placed objects; placement, duplication and deletion; undo/redo; save/load; and an on-screen help HUD. Campaign Forge waits for the opening cutscene to finish. Keyboard/mouse is supported; gamepad editing is not implemented.
-- Runtime objects created by scripts/game types and players are not generally editable. Multiplayer editing/synchronization, spawn points/game-type flags, encounter/trigger editing, pitch/roll rotation and a dedicated menu entry remain out of scope.
+- Runtime objects created by scripts/game types and players are not generally editable. Multiplayer editing/synchronization, spawn points/game-type flags, encounter/trigger editing and a dedicated menu entry remain out of scope.
 
 ## Controls
 
-Open/close with F7 or B (configurable as `forge.toggle_key`; macOS may require Fn+F7). Mouse look; WASD fly; Space/C vertical movement; click select/drop; right-click or E grab; Q/R rotate; arrows and PgUp/PgDn nudge; `[`/`]` or wheel choose an item; P place; V duplicate; Delete delete; G snapping; Ctrl+Z undo; Ctrl+Y redo; Ctrl+S save; H help; Esc put back/deselect.
+Open/close with F7 or B (configurable as `forge.toggle_key`; macOS may require Fn+F7). Mouse look; WASD fly; Space/C vertical movement; click select/drop; right-click or E grab; X/Y/Z choose roll/pitch/yaw and Q/R rotate; arrows and PgUp/PgDn nudge; `[`/`]` or wheel choose an item; P place; V duplicate; Delete delete; G snapping; Ctrl+Z undo; Ctrl+Y redo; Ctrl+S save; H help; Esc put back/deselect.
 
 The game is paused while Forge is open and the normal camera is restored on close. The host's loopback connection can show the game's “connection experiencing difficulties” warning while a solo System Link host is paused. This was observed in the test harness; it was not suppressed.
 
@@ -24,6 +24,37 @@ The game is paused while Forge is open and the normal camera is restored on clos
 - Screenshots showed the Forge HUD/selection outline and the normal first-person view restored after closing.
 - This was not a manual keyboard/mouse test and did not include 32-bit Linux or Windows builds. 32-bit neutrality was reasoned from the feature guards and changed source locations, not established by running the port-neutrality checker.
 - Test scratch data and screenshots were kept under `/tmp/forge-test`; the installed maps directory was symlinked for reading.
+
+## GLB geometry and character handoff
+
+The platform feature now exposes stable host-local editor slots through the
+optional `halo_world_geometry` editor adapter. Forge does not manufacture tag
+objects for GLBs: selection, spherical highlight, palette placement, carry, full 3D rotation,
+copy/delete, undo/redo and overlay persistence work against those slots. Solid
+collision and the shared GLB renderer consume the same pose. The current resource
+is `platform.asset`, with 64 slots including tombstones; this is not yet a
+multi-file asset browser or arbitrary-mesh collision importer.
+
+The character and attachments are hidden while the flying camera owns Forge.
+Closing restores the biped at the camera's eye position and facing if its full
+collision pill is clear. Obstructions trigger bounded depenetration or return to
+an entry point that is still clear; if neither works, Forge refuses to close.
+Visibility is restored on ordinary close and disposal. Vehicle occupants must
+exit their vehicle first. There is no physical Monitor object while flying.
+
+Validated on macOS with `tools/test_forge_platform_local.py`: actual ray/click
+selection and edit keys, palette placement, undo/redo, overlay reload in a fresh
+process, hidden/visible avatar transitions, exact clear-space return and blocked
+wall/floor/GLB-pill checks. Its `--visual` run holds the edited Forge scene for
+screenshots. XYZ carry and yaw/pitch/roll edits, matching Halo's native Euler
+convention, are covered by the live test and persisted across fresh-process reload.
+Scratch data and screenshots stay outside the repository.
+
+Forge can draw transparent PNG selectors without the platform feature. The macOS
+play shortcut configures the user's `forge_gui.png` cross and `forge_selected_gui.png`
+bar at a small, HUD-scaled size. Two bounded resources use premultiplied mipmaps,
+per-view centering, RGB-only drawing, and text fallback if absent/invalid. Real GL
+screenshots/pixel checks in `tools/test_platform_transparency.py` cover both states.
 
 ## `fix.patch` and the libtiff leak
 

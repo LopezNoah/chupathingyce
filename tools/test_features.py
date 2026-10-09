@@ -25,6 +25,10 @@ def test_selection():
     assert not any("source/features/" in str(path) for path in off)
     assert Path("source/features/bots/bots.c") in on
     assert Path("source/features/infection/game_engine_infection.c") in on
+    assert not any("features/platform/" in str(path) for path in on)
+    platform = features.defines(SimpleNamespace(feature_platform=True))
+    assert "-DHALO_FEATURE_PLATFORM" in platform
+    assert "-DHALO_EXTENSION_2=platform" in platform
 
 
 def test_drop_in(tmp_path, monkeypatch):
@@ -104,6 +108,19 @@ int main(void) {
     subprocess.run([str(executable)], check=True)
 
 
+def test_world_geometry_dispatcher(tmp_path):
+    (tmp_path / "cseries.h").write_text(
+        "#pragma once\n#include <stddef.h>\n#include <wchar.h>\n"
+        "typedef int boolean; typedef float real;\n"
+        "#define TRUE 1\n#define FALSE 0\n#define NUMBEROF(a) (sizeof(a)/sizeof((a)[0]))\n")
+    executable = tmp_path / "geometry_dispatch_test"
+    subprocess.run([compiler(), "-std=gnu89", "-Wall", "-Wextra", "-Werror", "-I", str(tmp_path),
+                    "-I", str(ROOT / "source"), "-DHALO_EXTENSION_1=first", "-DHALO_EXTENSION_2=second",
+                    str(ROOT / "source/extensions/extension_dispatch.c"),
+                    str(ROOT / "tools/tests/world_geometry_dispatch_test.c"), "-o", str(executable)], check=True)
+    subprocess.run([str(executable)], check=True)
+
+
 def test_settings_sections(tmp_path):
     # Compile the actual settings table and default writer with small append
     # stand-ins. TOML parsing catches duplicate sections such as [debug].
@@ -136,7 +153,7 @@ int main(void) { config_default_text(); puts(output); return 0; }
     path.write_text(harness)
     executable = tmp_path / "settings_test"
     subprocess.run([compiler(), "-I", str(ROOT / "source"),
-                    *features.defines(SimpleNamespace(feature_bots=True, feature_infection=True)),
+                    *features.defines(SimpleNamespace(feature_bots=True, feature_infection=True, feature_platform=True)),
                     str(path), "-o", str(executable)], check=True)
     result = subprocess.run([str(executable)], capture_output=True, text=True, check=True)
     import tomllib
@@ -144,6 +161,12 @@ int main(void) { config_default_text(); puts(output); return 0; }
     assert config["bots"]["count"] == 0
     assert config["infection"]["local_enabled"] is False
     assert config["forge"]["toggle_key"] == "F7, B"
+    assert config["forge"]["selector_asset"] == ""
+    assert config["forge"]["selected_selector_asset"] == ""
+    assert config["forge"]["selector_size"] == 32
     assert "nav_probe" in config["debug"]
     assert "forge_test" in config["debug"]
     assert "infection_test_map" in config["debug"]
+    assert config["platform"]["enabled"] is False
+    assert config["platform"]["elevation"] == 0.6
+    assert config["debug"]["platform_test"] is False

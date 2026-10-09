@@ -1,0 +1,8 @@
+{
+  "name": "platform",
+  "order": 40,
+  "default": false,
+  "help": "Experimental procedural solid platform in offline Blood Gulch (64-bit desktop)",
+  "extension": true,
+  "settings": "settings.inc"
+}

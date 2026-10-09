@@ -153,6 +153,42 @@ boolean halo_extensions_suppress_game_report(void)
 	return FALSE;
 }
 
+/* ---------- procedural world geometry */
+
+void halo_extensions_world_render(void)
+{
+	EACH_PART(e, world_geometry)
+		if (e->world_geometry->render) e->world_geometry->render();
+}
+
+boolean halo_extensions_world_test_point(union real_point3d const *point)
+{
+	EACH_PART(e, world_geometry)
+		if (e->world_geometry->test_point && e->world_geometry->test_point(point)) return TRUE;
+	return FALSE;
+}
+
+boolean halo_extensions_world_test_vector(unsigned long flags, union real_point3d const *point,
+	union real_vector3d const *vector, real radius, struct collision_result *result)
+{
+	boolean hit = FALSE;
+	EACH_PART(e, world_geometry)
+	{
+		if (e->world_geometry->test_vector &&
+			e->world_geometry->test_vector(flags, point, vector, radius, result))
+			hit = TRUE;
+	}
+	return hit;
+}
+
+void halo_extensions_world_get_features(union real_point3d const *center, real radius,
+	real height, real width, struct collision_feature_list *features)
+{
+	EACH_PART(e, world_geometry)
+		if (e->world_geometry->get_features)
+			e->world_geometry->get_features(center, radius, height, width, features);
+}
+
 /* ---------- rulesets */
 
 void halo_extensions_end_game_session(void)

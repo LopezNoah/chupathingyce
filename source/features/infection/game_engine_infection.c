@@ -857,11 +857,12 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 	char const *map = config_string("debug.infection_test_map");
 	char path[128];
 	long players;
+	boolean manual = !csstrcmp(config_string("debug.infection_test_scenario"), "local-play");
 	boolean control = !csstrcmp(config_string("debug.infection_test_scenario"), "slayer-control");
 	if (launched && control) { infection_slayer_control_update(); return; }
 	/* The control requires Infection DISABLED: it proves ordinary Slayer
 	 * through the same launcher is untouched by the adapter. */
-	if (launched || !main_menu_loaded || !*map || config_boolean("infection.local_enabled") == control) return;
+	if (launched || !main_menu_loaded || !*map || config_boolean("infection.local_enabled") == (control || manual)) return;
 	/* A dedicated local launcher, not network_test's host/join modes. */
 	if (game_connection() != _game_connection_local || global_network_game_server_get() ||
 		global_network_game_client_get() || *config_string("debug.network_test")) return;
@@ -870,7 +871,7 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 	if (waiting < 2.f) return;
 	launched = TRUE;
 	players = config_integer("debug.infection_test_players");
-	if (players < 2 || players > MAXIMUM_LOCAL_PLAYERS || strspn(map, "abcdefghijklmnopqrstuvwxyz0123456789_") != strlen(map))
+	if (players < (manual ? 1 : 2) || players > MAXIMUM_LOCAL_PLAYERS || strspn(map, "abcdefghijklmnopqrstuvwxyz0123456789_") != strlen(map))
 	{
 		platform_log("infection local: invalid local test map or player count; not launched");
 		return;
@@ -885,6 +886,7 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 	main_set_map_name(path);
 	main_disallow_persistent_storage();
 	platform_log("infection local: launching %s with %ld local players (no server)%s", map, players,
+		manual ? " for manual offline Slayer play" :
 		control ? " as an ordinary Slayer control" : "");
 }
 

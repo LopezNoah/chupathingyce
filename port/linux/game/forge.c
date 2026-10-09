@@ -73,6 +73,7 @@ typedef int forge_compiled_out;
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
+#include "units/bipeds.h"
 #include "rasterizer/rasterizer.h"
 #include "render/render.h"
 #include "render/render_debug.h"
@@ -82,7 +83,6 @@ typedef int forge_compiled_out;
 #include "tag_files/tag_groups.h"
 #include "text/draw_string.h"
 #include "text/font_group.h"
-#include "text/unicode.h"
 
 #include "halo_forge_input.h"
 
@@ -112,6 +112,7 @@ enum
 	FORGE_MAXIMUM_FILE_SIZE = 4 * 1024 * 1024,
 	FORGE_MESSAGE_LENGTH = 160,
 	FORGE_FORMAT_VERSION = 1,
+	FORGE_MAXIMUM_WORLD_EDITS = 128,
 };
 
 enum forge_target_kind
@@ -119,6 +120,7 @@ enum forge_target_kind
 	_forge_target_none = 0,
 	_forge_target_placement,
 	_forge_target_addition,
+	_forge_target_world,
 };
 
 /* world units (one is about 3 m) and radians */
@@ -190,6 +192,13 @@ struct forge_command
 
 /* an object a scenario placement made (forge_object_placed_from_scenario),
 by the object's absolute index */
+struct forge_world_loaded
+{
+	struct forge_target target;
+	struct forge_transform state;
+	boolean applied;
+};
+
 struct forge_source
 {
 	long object_index;
@@ -217,6 +226,8 @@ static struct
 	struct forge_addition additions[FORGE_MAXIMUM_ADDITIONS];
 	long addition_count;
 	long next_addition_id;
+	struct forge_world_loaded world_loaded[FORGE_MAXIMUM_WORLD_EDITS];
+	long world_loaded_count;
 
 	struct forge_command commands[FORGE_MAXIMUM_COMMANDS];
 	long command_count;
@@ -241,12 +252,14 @@ static struct
 	boolean hover_hit;
 	real_point3d hover_point;
 	long hover_object_index;
+	struct forge_target hover_world;
 
 	struct forge_target selected;
 	boolean carrying;
 	real carry_distance;
 	struct forge_transform carry_before;
-	real turn_accumulated;
+	boolean turning;
+	short rotation_axis; /* Euler slot: 0 yaw/Z, 1 pitch/Y, 2 roll/X */
 
 	boolean snap;
 	boolean help;
@@ -517,12 +530,17 @@ static long forge_target_object(
 	return NONE;
 }
 
+static boolean forge_target_of_object(long object_index, struct forge_target *target);
+#include "forge_world.inc"
+
 static boolean forge_target_state(
 	struct forge_target const *target,
 	struct forge_transform *state)
 {
 	switch (target->kind)
 	{
+	case _forge_target_world:
+		return forge_world_get(target, state);
 	case _forge_target_placement:
 	{
 		struct forge_placement_edit *edit = forge_placement_edit_find(target->type, (short)target->index);
@@ -565,6 +583,9 @@ static void forge_target_apply(
 	forge_nav_revision++;
 	switch (target->kind)
 	{
+	case _forge_target_world:
+		if (!forge_world_set(target, state)) forge_message("GLB edit rejected: invalid bounds or full palette");
+		break;
 	case _forge_target_placement:
 	{
 		struct forge_placement_edit *edit = forge_placement_edit_get(target->type, target->index);
@@ -702,6 +723,15 @@ static void forge_palette_build(
 			forge.palette_count++;
 		}
 	}
+	{
+		long provider;
+		for (provider = 0; provider < halo_extensions_count() && forge.palette_count < FORGE_MAXIMUM_PALETTE; provider++) {
+			struct halo_world_geometry const *geometry = halo_extensions_get(provider)->world_geometry;
+			if (!geometry || !geometry->edit_count || !geometry->edit_set || geometry->edit_count() == 0) continue;
+			forge.palette[forge.palette_count].type = NONE;
+			forge.palette[forge.palette_count++].definition_index = provider;
+		}
+	}
 	if (forge.palette_index >= forge.palette_count)
 		forge.palette_index = 0;
 }
@@ -805,6 +835,9 @@ static void forge_write_transform(
 		transform->rotation.yaw, transform->rotation.pitch, transform->rotation.roll);
 }
 
+static void forge_world_save(FILE *file);
+static void forge_world_apply_loaded(void);
+
 static boolean forge_save(
 	void)
 {
@@ -862,7 +895,9 @@ static boolean forge_save(
 		fprintf(file, "}");
 		first = FALSE;
 	}
-	fprintf(file, "%s]\n}\n", first ? "" : "\n  ");
+	fprintf(file, "%s],\n  \"external\": [", first ? "" : "\n  ");
+	forge_world_save(file);
+	fprintf(file, "\n  ]\n}\n");
 	if (fclose(file) != 0)
 	{
 		forge_message("Could not write %s", path);
@@ -1175,6 +1210,8 @@ static void forge_json_addition(
 	}
 }
 
+#include "forge_world_io.inc"
+
 static void forge_load(
 	void)
 {
@@ -1188,6 +1225,7 @@ static void forge_load(
 	char map_name[FORGE_MAP_NAME_LENGTH] = "";
 	char const *placements_at = NULL;
 	char const *additions_at = NULL;
+	char const *external_at = NULL;
 
 	forge_file_path(path, sizeof(path));
 	file = fopen(path, "rb");
@@ -1233,6 +1271,8 @@ static void forge_load(
 					placements_at = json.at;
 				else if (!strcmp(key, "additions"))
 					additions_at = json.at;
+				else if (!strcmp(key, "external"))
+					external_at = json.at;
 				forge_json_skip(&json);
 			}
 		} while (!json.error && forge_json_take(&json, ','));
@@ -1280,6 +1320,10 @@ static void forge_load(
 					forge_json_addition(&entry);
 			} while (!json.error && forge_json_take(&json, ','));
 		}
+	}
+	if (external_at && !json.error) {
+		json.at = external_at;
+		forge_world_load(&json);
 	}
 	if (json.error)
 		platform_log("forge: %s is damaged: read as far as it could be", path);
@@ -1388,6 +1432,7 @@ static void forge_pick(
 	ray.k = forward.k * FORGE_REACH;
 	forge.hover_hit = FALSE;
 	forge.hover_object_index = NONE;
+	csmemset(&forge.hover_world, 0, sizeof(forge.hover_world));
 	if (carried != NONE)
 	{
 		/* (neither what is carried nor the player) */
@@ -1402,7 +1447,8 @@ static void forge_pick(
 		if (collision.type == _collision_result_object && collision.object_index != NONE)
 			forge.hover_object_index = forge_root_object(collision.object_index);
 	}
-	if (forge.hover_object_index != NONE || carried != NONE)
+	forge_world_pick(&ray, hit_distance / FORGE_REACH);
+	if (forge.hover_world.kind != _forge_target_none || forge.hover_object_index != NONE || carried != NONE)
 		return;
 
 	/* an object without collision (plants, sound scenery, small props): the
@@ -1478,11 +1524,23 @@ static void forge_snap_transform(
 	transform->position.y = forge_snap(transform->position.y, FORGE_SNAP_DISTANCE);
 	transform->position.z = forge_snap(transform->position.z, FORGE_SNAP_DISTANCE);
 	transform->rotation.yaw = forge_snap(transform->rotation.yaw, FORGE_SNAP_ANGLE);
+	transform->rotation.pitch = forge_snap(transform->rotation.pitch, FORGE_SNAP_ANGLE);
+	transform->rotation.roll = forge_snap(transform->rotation.roll, FORGE_SNAP_ANGLE);
+}
+
+static void forge_turn_end(void)
+{
+	struct forge_transform after;
+	if (!forge.turning) return;
+	forge.turning = FALSE;
+	if (forge_target_state(&forge.selected, &after))
+		forge_command_push(&forge.selected, &forge.carry_before, &after);
 }
 
 static void forge_select(
 	struct forge_target const *target)
 {
+	forge_turn_end();
 	forge.selected = *target;
 	forge.carrying = FALSE;
 }
@@ -1493,7 +1551,9 @@ static void forge_carry_begin(
 	long object_index = forge_target_object(&forge.selected);
 	real_vector3d forward, right;
 
-	if (object_index == NONE || !forge_target_state(&forge.selected, &forge.carry_before))
+	forge_turn_end();
+	if ((object_index == NONE && forge.selected.kind != _forge_target_world) ||
+		!forge_target_state(&forge.selected, &forge.carry_before))
 		return;
 	forge_camera_vectors(&forward, &right);
 	forge.carry_distance = MAX(FORGE_CARRY_MINIMUM,
@@ -1506,6 +1566,7 @@ static void forge_carry_end(
 {
 	struct forge_transform after;
 
+	forge_turn_end();
 	if (!forge.carrying)
 		return;
 	forge.carrying = FALSE;
@@ -1525,12 +1586,16 @@ static void forge_carry_end(
 static void forge_change(
 	struct forge_transform const *after)
 {
-	struct forge_transform before;
+	struct forge_transform before, applied;
 
+	forge_turn_end();
 	if (!forge_target_state(&forge.selected, &before))
 		return;
 	forge_target_apply(&forge.selected, after);
-	forge_command_push(&forge.selected, &before, after);
+	/* Providers may reject an out-of-world pose. Record only the actual
+	 * state so undo never claims an edit that did not happen. */
+	if (forge_target_state(&forge.selected, &applied))
+		forge_command_push(&forge.selected, &before, &applied);
 }
 
 static void forge_place(
@@ -1632,6 +1697,8 @@ static boolean forge_may_open(
 	return TRUE;
 }
 
+#include "forge_avatar.inc"
+
 static void forge_open(
 	void)
 {
@@ -1646,6 +1713,7 @@ static void forge_open(
 		return;
 	}
 	forge.local_player_index = local_player_index;
+	if (!forge_avatar_begin()) return;
 	forge.was_paused = game_time_get_paused();
 	game_time_set_paused(TRUE);
 	observer = observer_get_camera(local_player_index);
@@ -1669,6 +1737,9 @@ static void forge_close(
 	if (!forge.active)
 		return;
 	forge_carry_end(TRUE);
+	if (game_in_progress()) {
+		if (!forge_avatar_end()) return;
+	} else forge_avatar_restore();
 	forge.active = FALSE;
 	csmemset(&forge.selected, 0, sizeof(forge.selected));
 	if (game_in_progress())
@@ -1761,8 +1832,20 @@ static void forge_edit(
 		forge_undo(FALSE);
 		return;
 	}
+	if (!control) {
+		short axis = forge.rotation_axis;
+		if (forge_pressed(HALO_FORGE_KEY_X)) axis = 2;
+		else if (forge_pressed(HALO_FORGE_KEY_Y)) axis = 1;
+		else if (forge_pressed(HALO_FORGE_KEY_Z)) axis = 0;
+		if (axis != forge.rotation_axis) {
+			forge_turn_end();
+			forge.rotation_axis = axis;
+			forge_message("Rotation axis %c: Q/R turns; grab and fly moves freely", "ZYX"[axis]);
+		}
+	}
 	if (forge_pressed(HALO_FORGE_KEY_G))
 	{
+		forge_turn_end();
 		forge.snap = !forge.snap;
 		forge_message(forge.snap ? "Snapping on (0.1 units, 15 degrees)" : "Snapping off");
 	}
@@ -1784,8 +1867,10 @@ static void forge_edit(
 	{
 		if (forge.carrying)
 			forge_carry_end(FALSE);
-		else
+		else {
+			forge_turn_end();
 			csmemset(&forge.selected, 0, sizeof(forge.selected));
+		}
 		return;
 	}
 
@@ -1793,11 +1878,12 @@ static void forge_edit(
 	{
 		struct forge_target target;
 
+		forge_turn_end();
 		if (forge.carrying)
 		{
 			forge_carry_end(TRUE);
 		}
-		else if (forge_target_of_object(forge.hover_object_index, &target))
+		else if (forge_hover_target(&target))
 		{
 			forge_select(&target);
 		}
@@ -1832,7 +1918,18 @@ static void forge_edit(
 		}
 		transform.rotation.yaw = forge.camera.facing.yaw;
 		forge_snap_transform(&transform);
-		forge_place(entry->type, entry->definition_index, &transform, FALSE);
+		if (entry->type == NONE) {
+			struct forge_target target = { _forge_target_world, (short)entry->definition_index, 0 };
+			struct halo_world_geometry const *geometry = forge_world_geometry(&target);
+			struct forge_transform before = transform;
+			if (!geometry || !geometry->edit_count) return;
+			target.index = geometry->edit_count();
+			before.deleted = TRUE;
+			if (!forge_world_set(&target, &transform)) { forge_message("GLB instance limit reached or invalid position"); return; }
+			forge_nav_revision++;
+			forge_command_push(&target, &before, &transform);
+			forge_select(&target);
+		} else forge_place(entry->type, entry->definition_index, &transform, FALSE);
 		return;
 	}
 
@@ -1866,7 +1963,19 @@ static void forge_edit(
 		long object_index = forge_target_object(&forge.selected);
 
 		forge_carry_end(TRUE);
-		if (object_index != NONE)
+		if (forge.selected.kind == _forge_target_world) {
+			struct halo_world_geometry const *geometry = forge_world_geometry(&forge.selected);
+			struct forge_target copy = forge.selected;
+			struct forge_transform before, after;
+			if (!geometry || !geometry->edit_count || !forge_target_state(&forge.selected, &after)) return;
+			copy.index = geometry->edit_count();
+			before = after; before.deleted = TRUE; after.deleted = FALSE;
+			if (!forge_world_set(&copy, &after)) { forge_message("GLB instance limit reached"); return; }
+			forge_command_push(&copy, &before, &after);
+			forge_nav_revision++;
+			forge_select(&copy);
+			forge_carry_begin();
+		} else if (object_index != NONE)
 		{
 			struct forge_transform transform;
 
@@ -1896,13 +2005,11 @@ static void forge_edit(
 		{
 			struct forge_transform after = state;
 
-			after.rotation.yaw += turn;
-			while (after.rotation.yaw > _pi)
-				after.rotation.yaw -= 2.0f * _pi;
-			while (after.rotation.yaw < -_pi)
-				after.rotation.yaw += 2.0f * _pi;
-			if (forge.snap)
-				after.rotation.yaw = forge_snap(after.rotation.yaw, FORGE_SNAP_ANGLE);
+			real *angle = &after.rotation.n[forge.rotation_axis];
+			*angle += turn;
+			while (*angle > _pi) *angle -= 2.0f * _pi;
+			while (*angle < -_pi) *angle += 2.0f * _pi;
+			if (forge.snap) *angle = forge_snap(*angle, FORGE_SNAP_ANGLE);
 			if (forge.carrying)
 			{
 				forge_target_apply(&forge.selected, &after);
@@ -1914,18 +2021,13 @@ static void forge_edit(
 			else
 			{
 				/* (held: one undo step for the whole turn, pushed once let go) */
-				if (!forge.turn_accumulated)
-					forge.carry_before = state;
-				forge.turn_accumulated += turn;
+				if (!forge.turning) forge.carry_before = state;
+				forge.turning = TRUE;
 				forge_target_apply(&forge.selected, &after);
 			}
 			forge_target_state(&forge.selected, &state);
 		}
-		else if (forge.turn_accumulated != 0.0f)
-		{
-			forge.turn_accumulated = 0.0f;
-			forge_command_push(&forge.selected, &forge.carry_before, &state);
-		}
+		else forge_turn_end();
 	}
 
 	/* nudging, along the camera's level directions and up */
@@ -1972,6 +2074,9 @@ static void forge_edit(
 /* ---------- private code: the scripted test (debug.forge_test) */
 
 const char *config_string(char const *name);
+long config_integer(char const *name);
+int platform_forge_selector_draw(char const *cross, char const *bar, int selected,
+	int size, int view_width, int view_height);
 
 static struct
 {
@@ -2255,6 +2360,8 @@ boolean forge_active(
 	return forge.active;
 }
 
+#include "forge_world_test.inc"
+
 void forge_update(
 	real seconds)
 {
@@ -2265,6 +2372,8 @@ void forge_update(
 	if (forge.message_seconds > 0.0f)
 		forge.message_seconds -= seconds;
 
+	if (forge.map_loaded && game_in_progress()) forge_world_apply_loaded();
+	forge_world_test_update(seconds);
 	forge_test_update(seconds);
 	halo_forge_input_read(&input, forge.active);
 	if (forge.active)
@@ -2294,7 +2403,8 @@ void forge_update(
 	if (!game_time_get_paused())
 		game_time_set_paused(TRUE);
 	/* a selection whose object is gone (a script deleted it, a BSP switch) */
-	if (forge.selected.kind != _forge_target_none && forge_target_object(&forge.selected) == NONE)
+	if (forge.selected.kind != _forge_target_none && forge.selected.kind != _forge_target_world &&
+		forge_target_object(&forge.selected) == NONE)
 	{
 		forge.carrying = FALSE;
 		csmemset(&forge.selected, 0, sizeof(forge.selected));
@@ -2330,6 +2440,7 @@ void forge_initialize_for_new_map(
 	long absolute_index;
 	short local_player_index;
 
+	forge_avatar_restore();
 	forge.active = FALSE;
 	for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
 		forge.camera_reset[local_player_index] = FALSE;
@@ -2342,6 +2453,7 @@ void forge_initialize_for_new_map(
 	forge.checksum = checksum;
 	forge.placement_count = 0;
 	forge.addition_count = 0;
+	forge.world_loaded_count = 0;
 	forge.next_addition_id = 0;
 	forge.command_count = 0;
 	forge.command_position = 0;
@@ -2349,7 +2461,8 @@ void forge_initialize_for_new_map(
 	forge.palette_count = 0;
 	forge.palette_index = 0;
 	forge.carrying = FALSE;
-	forge.turn_accumulated = 0.0f;
+	forge.turning = FALSE;
+	forge.rotation_axis = 0;
 	csmemset(&forge.selected, 0, sizeof(forge.selected));
 	for (absolute_index = 0; absolute_index < MAXIMUM_OBJECTS_PER_MAP; absolute_index++)
 		forge_sources[absolute_index].object_index = NONE;
@@ -2360,6 +2473,7 @@ void forge_initialize_for_new_map(
 void forge_dispose_from_old_map(
 	void)
 {
+	forge_avatar_restore();
 	forge.active = FALSE;
 	forge.carrying = FALSE;
 	if (forge.map_loaded)
@@ -2446,7 +2560,12 @@ static void forge_selection_name(
 	long object_index = forge_target_object(&forge.selected);
 	char const *name = object_index != NONE ? forge_tag_short_name(object_get(object_index)->definition_index) : "?";
 
-	if (forge.selected.kind == _forge_target_placement)
+	if (forge.selected.kind == _forge_target_world) {
+		struct halo_world_geometry const *geometry = forge_world_geometry(&forge.selected);
+		snprintf(text, (size_t)size, "%s (instance %ld)",
+			geometry && geometry->edit_name ? geometry->edit_name(forge.selected.index) : "external geometry",
+			forge.selected.index);
+	} else if (forge.selected.kind == _forge_target_placement)
 	{
 		snprintf(text, (size_t)size, "%s %s (placement %ld)", object_type_get_name(forge.selected.type), name,
 			forge.selected.index);
@@ -2455,6 +2574,14 @@ static void forge_selection_name(
 	{
 		snprintf(text, (size_t)size, "%s %s (added)", object_type_get_name(forge.selected.type), name);
 	}
+}
+
+static boolean forge_draw_selector(void)
+{
+	return platform_forge_selector_draw(config_string("forge.selector_asset"),
+		config_string("forge.selected_selector_asset"), forge.selected.kind != _forge_target_none,
+		config_integer("forge.selector_size"), render.camera.window_bounds.x1 - render.camera.window_bounds.x0,
+		render.camera.window_bounds.y1 - render.camera.window_bounds.y0) != 0;
 }
 
 void forge_render(
@@ -2477,6 +2604,8 @@ void forge_render(
 		return;
 	}
 
+	forge_world_outline(&forge.hover_world, &grey);
+	forge_world_outline(&forge.selected, forge.carrying ? &cyan : &yellow);
 	/* what the crosshair is on, and the selection */
 	if (forge.hover_object_index != NONE && forge_object_alive(forge.hover_object_index))
 	{
@@ -2512,26 +2641,19 @@ void forge_render(
 		render_debug_point(TRUE, &forge.hover_point, 0.05f, &white);
 
 	font_index = hud_get_font_index();
-	if (font_index == NONE)
+	if (font_index == NONE) {
+		forge_draw_selector();
 		return;
+	}
 	{
 		struct font_header *font = font_definition_get(font_index);
 
 		line_height = (short)(font->ascending_height + font->descending_height + 2);
 	}
 
-	/* the crosshair */
-	{
-		short width = (short)(render.camera.window_bounds.x1 - render.camera.window_bounds.x0);
-		short height = (short)(render.camera.window_bounds.y1 - render.camera.window_bounds.y0);
-
-		forge_draw_text("+", 0, (short)(height / 2 - line_height / 2), 2, &white);
-		(void)width;
-	}
-
 	y = 12;
-	snprintf(text, sizeof(text), "FORGE  %s%s%s", forge.map_name, forge_unsaved() ? "  (unsaved)" : "",
-		forge.snap ? "  snapping" : "");
+	snprintf(text, sizeof(text), "FORGE  %s%s%s  rotate %c", forge.map_name, forge_unsaved() ? "  (unsaved)" : "",
+		forge.snap ? "  snapping" : "", "ZYX"[forge.rotation_axis]);
 	forge_draw_text(text, 16, y, 0, &yellow);
 	y = (short)(y + line_height);
 	if (forge.selected.kind != _forge_target_none)
@@ -2547,7 +2669,13 @@ void forge_render(
 	{
 		struct forge_palette_entry const *entry = &forge.palette[forge.palette_index];
 
-		snprintf(text, sizeof(text), "Place (P): %s %s  [%ld/%ld]", object_type_get_name(entry->type),
+		if (entry->type == NONE) {
+			struct forge_target target = { _forge_target_world, (short)entry->definition_index, 0 };
+			struct halo_world_geometry const *geometry = forge_world_geometry(&target);
+			snprintf(text, sizeof(text), "Place (P): %s  [%ld/%ld]",
+				geometry && geometry->edit_name ? geometry->edit_name(0) : "GLB geometry",
+				forge.palette_index + 1, forge.palette_count);
+		} else snprintf(text, sizeof(text), "Place (P): %s %s  [%ld/%ld]", object_type_get_name(entry->type),
 			forge_tag_short_name(entry->definition_index), forge.palette_index + 1, forge.palette_count);
 		forge_draw_text(text, 16, y, 0, &grey);
 		y = (short)(y + line_height);
@@ -2564,7 +2692,7 @@ void forge_render(
 			"Mouse look   WASD fly   Space/C up/down",
 			"Shift faster   Alt slower",
 			"Click select/drop   Right click or E grab",
-			"Wheel: distance, or item   Q/R turn",
+			"Wheel: distance/item   X/Y/Z axis   Q/R rotate",
 			"Arrows, PgUp/PgDn nudge   G snapping",
 			"[ ] item   P place   V copy   Del delete",
 			"Ctrl+Z undo   Ctrl+Y redo   Ctrl+S save",
@@ -2577,6 +2705,12 @@ void forge_render(
 			forge_draw_text(help[index], 16, y, 0, &grey);
 			y = (short)(y + line_height);
 		}
+	}
+	/* Draw last so the help panel cannot cover the selector. */
+	if (!forge_draw_selector()) {
+		short height = (short)(render.camera.window_bounds.y1 - render.camera.window_bounds.y0);
+		forge_draw_text(forge.selected.kind == _forge_target_none ? "+" : "-", 0,
+			(short)(height / 2 - line_height / 2), 2, &white);
 	}
 }
 

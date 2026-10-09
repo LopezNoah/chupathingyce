@@ -35,11 +35,57 @@ initializer are). Hooks run on the game thread.
 #include "cseries.h"
 #include <stdint.h>
 
+union real_point3d;
+union real_vector3d;
+
 struct game_engine;
 struct game_variant;
 struct player_action;
 struct scenario_object_datum;
 union real_rgb_color;
+struct collision_result;
+struct collision_feature_list;
+
+/* ---------- host-local procedural world geometry (64-bit desktop only) */
+
+#if defined(HALO_64BIT) && !defined(HALO_SERVER) && !defined(HALO_ANDROID)
+#define HALO_EXTENSION_WORLD_GEOMETRY 1
+#endif
+
+/* Collision hooks run only for structure tests. Features must use NONE for
+ * tag surface/material indices: external geometry has no BSP tag identity.
+ * test_vector must leave result untouched on a miss and only replace a hit
+ * with a nearer one (result->t is the current upper bound). radius is zero
+ * for rays, positive for swept spheres. No tag storage may be modified. */
+/* Stable per-map slots for host-local geometry edited by Forge. Deleted slots
+ * remain addressable for undo. set may append exactly the next slot; callers
+ * must preserve the extension name (not registry order) when saving edits. */
+struct halo_world_edit_transform
+{
+	real position[3];
+	real rotation[3]; /* yaw, pitch, roll; radians */
+	boolean deleted;
+};
+
+struct halo_world_geometry
+{
+	void (*render)(void);
+	boolean (*test_point)(union real_point3d const *point);
+	boolean (*test_vector)(unsigned long flags, union real_point3d const *point,
+		union real_vector3d const *vector, real radius, struct collision_result *result);
+	void (*get_features)(union real_point3d const *center, real radius, real height,
+		real width, struct collision_feature_list *features);
+	/* Optional editor adapter. Ray picking returns a nearer fraction only;
+	 * corners provide the exact world-space selection box, not tag objects. */
+	long (*edit_count)(void);
+	boolean (*edit_get)(long index, struct halo_world_edit_transform *state);
+	boolean (*edit_set)(long index, struct halo_world_edit_transform const *state);
+	boolean (*edit_pick)(union real_point3d const *origin, union real_vector3d const *ray,
+		long ignored_index, real *t, long *index);
+	boolean (*edit_corners)(long index, union real_point3d *corners);
+	char const *(*edit_name)(long index);
+	char const *(*edit_resource)(void); /* stable asset identity for saved poses */
+};
 
 /* ---------- rulesets */
 
@@ -141,6 +187,7 @@ struct halo_extension
 	struct halo_ruleset const *ruleset;
 	struct halo_player_controller const *player_controller;
 	struct halo_editor const *editor;
+	struct halo_world_geometry const *world_geometry;
 };
 
 /* ---------- prototypes/EXTENSION_DISPATCH.C */
@@ -173,6 +220,14 @@ boolean halo_extensions_player_state_message(long player_index, wchar_t *message
 real halo_extensions_damage_multiplier(long damaging_player_index, long damaged_player_index);
 boolean halo_extensions_can_collect_items(long player_index);
 boolean halo_extensions_suppress_network_state(void);
+
+/* Procedural geometry is additive, independent of editor ownership. */
+void halo_extensions_world_render(void);
+boolean halo_extensions_world_test_point(union real_point3d const *point);
+boolean halo_extensions_world_test_vector(unsigned long flags, union real_point3d const *point,
+	union real_vector3d const *vector, real radius, struct collision_result *result);
+void halo_extensions_world_get_features(union real_point3d const *center, real radius,
+	real height, real width, struct collision_feature_list *features);
 
 /* player controllers */
 void halo_extensions_update_player_controllers(void);

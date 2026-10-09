@@ -598,9 +598,12 @@ static void keyboard_controls(const struct platform_input_state *input, XINPUT_G
 	keyboard_actions_held = held;
 }
 
-unsigned long halo_keyboard_actions(short controller_index)
+unsigned int halo_keyboard_actions(short controller_index)
 {
-	return controller_index == 0 ? keyboard_actions_held : 0;
+	/* The game mask is 32 bits on Xbox and LP64; host long may be 64 bits. */
+	typedef char keyboard_mask_fits[(NUMBER_OF_HALO_KEYBOARD_ACTIONS <= 32) ? 1 : -1];
+	(void)sizeof(keyboard_mask_fits);
+	return controller_index == 0 ? (unsigned int)keyboard_actions_held : 0;
 }
 
 /* ---------- Forge's keyboard and mouse */
@@ -662,6 +665,7 @@ void halo_forge_input_read(struct halo_forge_input *forge, int capture)
 		[HALO_FORGE_KEY_H] = SDL_SCANCODE_H,
 		[HALO_FORGE_KEY_Z] = SDL_SCANCODE_Z,
 		[HALO_FORGE_KEY_Y] = SDL_SCANCODE_Y,
+		[HALO_FORGE_KEY_X] = SDL_SCANCODE_X,
 		[HALO_FORGE_KEY_DELETE] = SDL_SCANCODE_DELETE,
 		[HALO_FORGE_KEY_ESCAPE] = SDL_SCANCODE_ESCAPE,
 		[HALO_FORGE_KEY_LEFT_BRACKET] = SDL_SCANCODE_LEFTBRACKET,

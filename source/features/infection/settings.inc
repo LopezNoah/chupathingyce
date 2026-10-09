@@ -23,12 +23,14 @@ written grouped by section. */
 		"Local Alpha selection seed: 0 automatic, nonzero for reproducible tests." },
 	{ "debug.infection_test_map", _config_string, "\"\"", "HALO_INFECTION_TEST_MAP", _environment_value, _platform_all,
 		"Opt-in local split-screen Infection launcher: Xbox map name (bloodgulch).\n"
-		"Requires infection.local_enabled. No network server is created." },
+		"Requires infection.local_enabled, except local-play/slayer-control scenarios.\n"
+		"No network server is created." },
 	{ "debug.infection_test_players", _config_integer, "2", "HALO_INFECTION_TEST_PLAYERS", _environment_value, _platform_all,
-		"Local test split-screen players (2-4). Normal real player datums, not bots." },
+		"Local players (2-4 for tests, 1-4 for local-play). Real player datums, not bots." },
 	{ "debug.infection_test_scenario", _config_string, "\"\"", "HALO_INFECTION_TEST_SCENARIO", _environment_value, _platform_all,
 		"Local test fixture only: empty for manual play; lifecycle scripts real\n"
 		"kills/respawns/conversions on three players across three rounds; melee\n"
 		"tests input restrictions and unarmed impact on a wounded target;\n"
 		"melee-full measures strikes on a full-health target; slayer-control\n"
-		"(infection.local_enabled false) is an ordinary Slayer regression." },
+		"(infection.local_enabled false) is an ordinary Slayer regression.\n"
+		"local-play (Infection disabled) launches manual Slayer without scripted actions." },

@@ -321,6 +321,8 @@ class Lp64Build:
                 add(source, f"{posix_cflags} {mbedtls_include}", native=True)
             elif source.name == "posix_upnp.c":
                 add(source, f"{posix_cflags} -I{MINIUPNPC_DIR / 'include'} -DMINIUPNP_STATICLIB", native=True)
+            elif source.name == "posix_platform_image.c":
+                add(source, f"{posix_cflags} -DHALO_64BIT -I{STB_DIR}", native=True)
             elif source.name == "posix_ui_font.c":
                 add(source, f"{posix_cflags} -I{STB_DIR}", native=True)
             elif source.name.startswith("posix_"):

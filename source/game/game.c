@@ -186,6 +186,7 @@ struct game_options;
 #endif
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "bots.h" /* port: computer-controlled players */
+#include "navigation_world.h"
 #ifdef HALO_64BIT
 #include "forge.h" /* port: port/linux/game/forge.c */
 #endif
@@ -889,6 +890,7 @@ void game_precache_new_map(
 void game_dispose_from_old_map(
 	void)
 {
+	navigation_world_reset();
 	rasterizer_dispose_from_old_map();
 	game_state_dispose_from_old_map();
 	cheats_dispose_from_old_map();

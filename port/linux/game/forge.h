@@ -16,6 +16,7 @@ none of the game's calls into it, so their game code is as it was
 #define FORGE_H
 
 #include "cseries.h"
+#include <stdint.h>
 
 #if defined(HALO_64BIT) && !defined(HALO_SERVER) && !defined(HALO_ANDROID)
 #define HALO_FORGE 1
@@ -29,6 +30,9 @@ void forge_update(real seconds);
 
 /* whether Forge is open */
 boolean forge_active(void);
+
+/* Host-local derived-navigation invalidation, never serialized into map tags. */
+uint64_t forge_navigation_revision(void);
 
 /* the director's camera for the local player while Forge is open
 (director.c): TRUE and the camera's proc if Forge has the view; FALSE

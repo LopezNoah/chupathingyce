@@ -13,6 +13,9 @@ dependencies. Halo's existing campaign actor AI under `source/ai/` is unchanged.
 - `behavior_intent.*`: intent emission from behavior leaves and caller-owned RNG.
 - `navigation.*`: incremental directed-graph route search, at most 256 nodes and
   2,048 links. Positive link costs, capability gates and revision-scoped routes.
+- `surface_navigation.*`: validated BSP-style convex polygon resources, height-aware
+  projection, budgeted BFS and revision-scoped portal routes. Separate from the
+  small graph, with no Halo dependencies; see [geometry navigation](../../docs/navigation.md).
 - `traversal.*`: route following, smart-link callbacks and reservation cleanup;
   stale graph revisions require replanning.
 - `fire_control.*`: automatic fire, tap cadence and bounded charged-shot holds,
@@ -39,6 +42,7 @@ From the repository root:
 
 ```sh
 python3 tools/test_engine_ai_navigation.py --sanitize
+python3 tools/test_surface_navigation.py --sanitize
 python3 tools/test_engine_ai_behavior.py --sanitize
 python3 tools/test_engine_ai_traversal.py --sanitize
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \

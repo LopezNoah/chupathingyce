@@ -266,6 +266,7 @@ symbols in this file:
 #include "players.h"
 #include "player_queues_new.h"
 #include "bots.h" /* port: computer-controlled players */
+#include "navigation_world.h"
 #include "objects/objects.h"
 #include "saved games/game_state.h"
 #include "scenario/scenario.h"
@@ -4503,6 +4504,7 @@ void players_update_before_game(
 	profile_enter(PLAYERS_UPDATE_BEFORE_GAME_PROFILE);
 	/* port: the host's bots join, and decide their actions for its next
 	update, as its local players' input goes there (bots.c) */
+	navigation_world_update_for_players();
 	bots_update();
 	players_coop_note_on_foot();
 	players_coop_rescue_stranded();

@@ -48,6 +48,7 @@ Configuration (port/linux/src/port_config.c): bots.count (0..3), bots.skill.
 #include "players_runtime.h"
 #include "player_queues_new.h"
 #include "bots.h"
+#include "navigation_probe.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
 #include "real_math.h"
@@ -2145,6 +2146,17 @@ static void bot_think(
 	if (player->unit_index != bot->unit_index)
 		bot_reset_life(bot, player->unit_index);
 
+	/* Geometry acceptance probe takes only Bot 1, after the normal authority,
+	   lifecycle and unit-control gates. Normal tactics/spawns stay unchanged. */
+	if (bot->slot == 0)
+	{
+		struct player_action probe_action;
+		if (navigation_probe_action(player->unit_index, &probe_action))
+		{
+			update_server_set_player_action(bot->player_index, &probe_action);
+			return;
+		}
+	}
 	bot_debug_sandbox(bot);
 	bot_perceive(bot, player, unit);
 	bot_observe_inventory(bot, unit);

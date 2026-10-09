@@ -96,6 +96,10 @@ double config_real(char const *name);
 /* source/game/bots.c's */
 boolean bots_player_is_bot(long player_index);
 
+/* Geometry edits invalidate host-local derived navigation, including undo/redo. */
+static uint64_t forge_nav_revision;
+uint64_t forge_navigation_revision(void) { return forge_nav_revision; }
+
 /* ---------- constants */
 
 enum
@@ -366,6 +370,7 @@ static long forge_object_new(
 	object_placement_data_new(&data, definition_index, NONE);
 	data.position = transform->position;
 	forge_transform_vectors(transform, &data.forward, &data.up);
+	forge_nav_revision++;
 	return object_new(&data);
 }
 
@@ -558,6 +563,7 @@ static void forge_target_apply(
 {
 	long object_index = forge_target_object(target);
 
+	forge_nav_revision++;
 	switch (target->kind)
 	{
 	case _forge_target_placement:

@@ -20,6 +20,9 @@ Bots use limited sight, target memory,
 reaction time, skill-dependent aim error, strafing and occasional grenades.
 Navigation searches a walkability graph built from player starting locations;
 stuck traversal links are disabled and routes replanned. It is not a navmesh.
+A separate opt-in [BSP geometry navigation probe](navigation.md) now validates
+polygon resources and walking through the normal Bot 1 action pipeline; it does
+not change normal tactical navigation or spawning.
 
 Weapon input supports automatic fire, slower semi-auto taps, charging/releasing
 against visible shielded targets at medium range, reloads, switching away from

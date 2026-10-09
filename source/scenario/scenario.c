@@ -176,6 +176,7 @@ symbols in this file:
 #include "effects/particles.h"
 #include "game/game_globals.h"
 #include "game/players.h"
+#include "game/navigation_world.h"
 #include "camera/observer.h"
 #include "main/main.h"
 #include "objects/object_lights.h"
@@ -1076,6 +1077,7 @@ boolean scenario_switch_structure_bsp(
 
 		match_assert("c:\\halo\\SOURCE\\scenario\\scenario.c", 0x2B7, global_scenario);
 		main_stop_time();
+		navigation_world_reset(); /* Before any tag storage is unloaded, including fallback. */
 		collision_log_enable(FALSE);
 
 		if (global_structure_bsp_index != NONE)

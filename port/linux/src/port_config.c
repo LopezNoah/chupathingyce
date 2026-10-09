@@ -488,6 +488,13 @@ static const struct config_setting config_settings[] =
 		"\"no\" never does, \"ask\" asks after the next crash and writes the answer\n"
 		"here." },
 
+	{ "debug.nav_probe", _config_boolean, "false", "HALO_NAV_PROBE", _environment_set_is_true, _platform_all,
+		"Opt-in BSP navigation walking probe controlling Bot 1 in a solo Slayer game.\n"
+		"No teleport or physics bypass; off in normal play." },
+	{ "debug.nav_dump", _config_string, "\"\"", "HALO_NAV_DUMP", _environment_value, _platform_all,
+		"Diagnostic walkable BSP polygon dump path (derived local data, not a map edit)." },
+	{ "debug.nav_goal", _config_string, "\"\"", "HALO_NAV_GOAL", _environment_value, _platform_all,
+		"Optional navigation probe goal as x,y,z in CE world units; empty picks a nearby region." },
 	{ "debug.bot_sandbox", _config_boolean, "false", "HALO_BOT_SANDBOX", _environment_set_is_true, _platform_all,
 		"Solo Team Slayer bot test fixture (requires three bots): seat the local\n"
 		"player in a parked Warthog and place teammate Bot 2 near the gunner entrance\n"

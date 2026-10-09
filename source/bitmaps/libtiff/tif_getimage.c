@@ -510,6 +510,11 @@ gtStripSeparate(tif, raster, Map, h, w)
 	u_int stripsize;
 	int fromskew, toskew;
 
+	put = pickTileSeparateCase(Map);
+	if (put == 0) {
+		TIFFError(filename, "Can not handle format");
+		return (0);
+	}
 	stripsize = TIFFStripSize(tif);
 	r = buf = (u_char *)debug_malloc(3*stripsize, 0,
 	    TIF_GETIMAGE_FILE, 487);
@@ -517,13 +522,6 @@ gtStripSeparate(tif, raster, Map, h, w)
 		return (0);
 	g = r + stripsize;
 	b = g + stripsize;
-	put = pickTileSeparateCase(Map);
-	if (put == 0) {
-		/* BUG (original): buf is leaked on this error path. A corrected build
-		 * should debug_free(buf, TIF_GETIMAGE_FILE, 517) before returning. */
-		TIFFError(filename, "Can not handle format");
-		return (0);
-	}
 	y = setorientation(tif, h);
 	toskew = (orientation == ORIENTATION_TOPLEFT ? -w + -w : -w + w);
 	TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rowsperstrip);

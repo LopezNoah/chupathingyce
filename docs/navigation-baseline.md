@@ -3,7 +3,7 @@
 ## Local inspection / baseline
 
 Work started on `main` at `656761d4` with uncommitted weapon/vehicle bot changes
-in `source/game/bots.c`, `source/units/vehicles.*`, `port/linux/src/port_config.c`,
+in `source/features/bots/bots.c`, `source/units/vehicles.*`, `port/linux/src/port_config.c`,
 `docs/bots.md`, and a new opportunity-log checker. These are preserved; no
 remote operation is part of this task.
 

@@ -20,6 +20,7 @@
 #include "main/main.h"
 #include "bink/bink_playback.h"
 #include "networking/network_game_globals.h"
+#include "extensions/extension_api.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -887,36 +888,36 @@ void infection_game_test_update(boolean main_menu_loaded, real seconds)
 		control ? " as an ordinary Slayer control" : "");
 }
 
-#else /* !HALO_FEATURE_INFECTION: configure.py --infection builds the real code */
+/* ---------- extension registration (source/extensions/extension_api.h) */
 
-/* Infection is compiled out: every engine hook sees it inactive, selection
- * always keeps the original engine, and the launcher never starts. */
-boolean infection_game_active(void) { return FALSE; }
-boolean infection_game_can_collect_items(long player_index) { (void)player_index; return TRUE; }
-struct game_engine *infection_game_select(struct game_engine *original, struct game_variant *variant)
+/* Local Infection owns conversion and respawn, with no Slayer awards,
+ * auto-balancing or suicide/betrayal penalties, while it is enabled; it is
+ * never sent as ordinary Slayer (local_only). */
+static struct halo_ruleset const infection_ruleset =
 {
-	(void)variant;
-	return original;
-}
-boolean infection_game_should_spawn(long player_index) { (void)player_index; return FALSE; }
-boolean infection_game_should_end(void) { return FALSE; }
-void infection_game_end_tick(void) {}
-void infection_game_player_killed(long killer_index, long dead_index) { (void)killer_index; (void)dead_index; }
-void infection_game_filter_action(long player_index, struct player_action *action) { (void)player_index; (void)action; }
-real infection_game_damage_multiplier(long attacker_index, long victim_index)
+	.active = infection_game_active,
+	.local_only = TRUE,
+	/* Host/local rules restrict all input sources, not only a pad. */
+	.filter_player_action = infection_game_filter_action,
+	/* Commit every death of this tick together, after object damage. */
+	.end_tick = infection_game_end_tick,
+	.player_killed = infection_game_player_killed,
+	.should_end_game = infection_game_should_end,
+	.should_spawn_player = infection_game_should_spawn,
+	.player_change_color = infection_game_color,
+	.player_state_message = infection_game_message,
+	.damage_multiplier = infection_game_damage_multiplier,
+	.can_collect_items = infection_game_can_collect_items,
+};
+
+struct halo_extension const infection_extension =
 {
-	(void)attacker_index;
-	(void)victim_index;
-	return 1.f;
-}
-void infection_game_color(long player_index, real_rgb_color *color) { (void)player_index; (void)color; }
-boolean infection_game_message(long player_index, wchar_t *message, long count)
-{
-	(void)player_index;
-	(void)message;
-	(void)count;
-	return FALSE;
-}
-void infection_game_test_update(boolean main_menu_loaded, real seconds) { (void)main_menu_loaded; (void)seconds; }
+	.name = "infection",
+	/* Optional test launcher: local split screen only, never a server. */
+	.main_frame_update = infection_game_test_update,
+	/* Selection enables the rules for local Slayer only. */
+	.select_game_engine = infection_game_select,
+	.ruleset = &infection_ruleset,
+};
 
 #endif /* HALO_FEATURE_INFECTION */

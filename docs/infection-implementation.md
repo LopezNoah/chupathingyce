@@ -18,8 +18,8 @@ replacement, commit, push or force-push was performed.
 
 | File | Purpose |
 | --- | --- |
-| `source/game/infection_rules.h` | Host rules/configuration API; participant, round and life identities |
-| `source/game/infection_rules.c` | Allocation-free, bounded state machine and scoring |
+| `source/features/infection/infection_rules.h` | Host rules/configuration API; participant, round and life identities |
+| `source/features/infection/infection_rules.c` | Allocation-free, bounded state machine and scoring |
 | `tools/test_infection_rules.c` | Automated scenarios, 480 seeded roster-selection trials |
 | `tools/test_infection_rules.py` | Strict compilation, optional ASan/UBSan, scripted prototype test |
 | `tools/infection_prototype.c` | Interactive controlled-participant harness |
@@ -163,7 +163,7 @@ Milestone 1 was committed as `1b7c7edc`. Milestone 2 work is uncommitted.
 
 Added files:
 
-- `source/game/game_engine_infection.{c,h}`: local-only adapter
+- `source/features/infection/game_engine_infection.{c,h}`: local-only adapter
 - `tools/test_infection_local.py`: real-game launcher
 - `tools/check_infection_local_log.py`: real-game log checker
 

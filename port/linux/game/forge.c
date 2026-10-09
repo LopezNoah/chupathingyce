@@ -41,17 +41,19 @@ encounters and trigger volumes, and the structure itself.
 
 #include "cseries.h"
 #include "forge.h"
+#include "extensions/extension_api.h"
 
-/* port neutrality: the 32-bit builds compile an empty unit, but for the
-call the platform layer makes (halo_forge_input_captured) */
+/* port neutrality: the 32-bit builds, and those configured --no-forge,
+compile an empty unit (the platform layer asks the extensions, not Forge,
+whether the input is captured: halo_extensions_input_captured) */
 #ifndef HALO_FORGE
 
-int halo_forge_input_captured(void);
-
-int halo_forge_input_captured(void)
-{
-	return 0;
-}
+#ifdef HALO_FEATURE_FORGE
+/* The feature is selected but this target has no editor implementation. */
+struct halo_extension const forge_extension = { .name = "forge" };
+#else
+typedef int forge_compiled_out;
+#endif
 
 #else
 
@@ -93,9 +95,6 @@ int halo_forge_input_captured(void)
 /* the platform layer's (port/linux/src) */
 void platform_log(char const *format, ...);
 double config_real(char const *name);
-/* source/game/bots.c's */
-boolean bots_player_is_bot(long player_index);
-
 /* Geometry edits invalidate host-local derived navigation, including undo/redo. */
 static uint64_t forge_nav_revision;
 uint64_t forge_navigation_revision(void) { return forge_nav_revision; }
@@ -1614,12 +1613,12 @@ static boolean forge_may_open(
 		long players = 0;
 
 		/* (a player of another machine has no local player here; this
-		machine's bots are no one else: source/game/bots.c) */
+		machine's bots are no one else: source/features/bots/bots.c) */
 		data_iterator_new(&iterator, player_data);
 		while (data_iterator_next(&iterator))
 		{
 			if (player_get(iterator.datum_index)->local_player_index == NONE &&
-				!bots_player_is_bot(iterator.datum_index))
+				!halo_extensions_player_is_computer_controlled(iterator.datum_index))
 			{
 				players++;
 			}
@@ -2250,13 +2249,6 @@ static void forge_test_update(
 
 /* ---------- public code */
 
-int halo_forge_input_captured(void);
-
-int halo_forge_input_captured(void)
-{
-	return forge.active;
-}
-
 boolean forge_active(
 	void)
 {
@@ -2587,5 +2579,31 @@ void forge_render(
 		}
 	}
 }
+
+/* ---------- extension registration (source/extensions/extension_api.h) */
+
+static struct halo_editor const forge_editor =
+{
+	.active = forge_active,
+	.update = forge_update,
+	.director_camera = forge_director_camera,
+	/* the map's saved edits, before its objects are placed */
+	.initialize_for_new_map = forge_initialize_for_new_map,
+	.dispose_from_old_map = forge_dispose_from_old_map,
+	.object_placed_from_scenario = forge_object_placed_from_scenario,
+	/* the objects Forge added to the structure BSP switched to */
+	.structure_bsp_reconnected = forge_structure_bsp_reconnected,
+	.render = forge_render,
+	/* geometry edits, undo and redo included, make derived navigation stale */
+	.world_edit_revision = forge_navigation_revision,
+};
+
+struct halo_extension const forge_extension =
+{
+	.name = "forge",
+	/* the map's objects placed: the objects Forge added are made */
+	.objects_placed = forge_objects_placed,
+	.editor = &forge_editor,
+};
 
 #endif

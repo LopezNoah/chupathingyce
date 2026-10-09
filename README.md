@@ -287,6 +287,9 @@ compatible with it.
 
 ## Building it yourself
 
+Build-time feature modules (`--infection`, `--bots`, `--no-forge`) and how to add
+one are described in [docs/extensions.md](docs/extensions.md).
+
 You need Python 3, [ninja](https://ninja-build.org/) and clang. The game
 supplies the Xbox SDK declarations it uses, so you don't need the SDK.
 

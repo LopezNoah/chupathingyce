@@ -1,0 +1,11 @@
+{
+  "name": "forge",
+  "order": 10,
+  "default": true,
+  "help": "Local map editor on supported 64-bit desktop targets",
+  "extension": true,
+  "settings": "settings.inc",
+  "sources": [
+    "port/linux/game/forge.c"
+  ]
+}

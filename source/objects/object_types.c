@@ -145,8 +145,8 @@ symbols in this file:
 #include "units/vehicles.h"
 #ifdef HALO_64BIT
 #include "game/game_engine.h" /* port: game_engine_vehicle_placement_begin, _allowed */
-#include "forge.h" /* port: port/linux/game/forge.c */
 #endif
+#include "extensions/extension_api.h"
 
 /* ---------- constants */
 
@@ -1177,10 +1177,8 @@ void object_types_reconnect_to_structure_bsp(
 	if (!cinematic_in_progress() || !cinematic_globals->suppress_bsp_object_creation)
 	{
 		object_types_place_objects(TRUE);
-#ifdef HALO_FORGE
-		/* port: the objects Forge added to this structure BSP */
-		forge_structure_bsp_reconnected();
-#endif
+		/* port: editors' objects in this structure BSP (Forge's additions) */
+		halo_extensions_structure_bsp_reconnected();
 	}
 
 	return;

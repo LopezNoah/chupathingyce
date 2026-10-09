@@ -163,10 +163,4 @@ boolean navigation_probe_action(long unit, struct player_action *action)
     return TRUE;
 }
 
-#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
-
-/* The walking probe drives a bot; with bots compiled out nothing calls it.
-   (A declaration keeps this a non-empty translation unit.) */
-typedef int navigation_probe_compiled_out;
-
 #endif /* HALO_FEATURE_BOTS */

@@ -85,6 +85,12 @@ struct config_setting
 #define DEFAULT_AUDIO_BUFFER_FRAMES "512"
 #endif
 
+/* Computed includes keep settings owned by each discovered feature. */
+#define HALO_SETTINGS_PATH_(name) features/name/settings.inc
+#define HALO_SETTINGS_STRING_(path) #path
+#define HALO_SETTINGS_STRING(path) HALO_SETTINGS_STRING_(path)
+#define HALO_SETTINGS_FILE(name) HALO_SETTINGS_STRING(HALO_SETTINGS_PATH_(name))
+
 static const struct config_setting config_settings[] =
 {
 	{ "display.fullscreen", _config_boolean, DEFAULT_FULLSCREEN, "HALO_FULLSCREEN", _environment_value, _platform_desktop,
@@ -271,26 +277,6 @@ static const struct config_setting config_settings[] =
 		"Showing the scores (the controller's Back)." },
 	{ "controls.pause", _config_string, "\"Escape\"", "HALO_KEY_PAUSE", _environment_value, _platform_all,
 		"The pause menu (the controller's Start)." },
-
-#ifdef HALO_FEATURE_BOTS
-	/* computer-controlled players (source/game/bots.c; configure.py --bots) */
-	{ "bots.count", _config_integer, "0", "HALO_BOTS", _environment_value, _platform_all,
-		"Computer-controlled players (0 to 3) in FFA or Team Slayer games you\n"
-		"host by yourself: a custom game nobody else is in. Bots never join a game\n"
-		"another machine is in. They play as players do, with the same weapons,\n"
-		"health and rules; experimental." },
-	{ "bots.skill", _config_string, "\"marine\"", "HALO_BOT_SKILL", _environment_value, _platform_all,
-		"How well the bots play: \"recruit\", \"marine\", \"odst\" or \"spartan\".\n"
-		"Skill changes their reactions, aim and sight, never their health or damage." },
-#endif /* HALO_FEATURE_BOTS */
-
-	/* Forge, the map editor in the game (port/linux/game/forge.c) */
-	{ "forge.toggle_key", _config_string, "\"F7, B\"", "HALO_FORGE_TOGGLE_KEY", _environment_value, _platform_desktop,
-		"Opens and closes Forge, the map editor, in a game on this machine (a\n"
-		"campaign level, or a multiplayer game nobody else is in): up to two keys,\n"
-		"separated by a comma, named as in [controls]; empty for none. The game\n"
-		"pauses while it is open. Its edits are kept beside the maps, in\n"
-		"forge\\<map>.forge.json, and the map's own file is never changed." },
 
 	{ "game.console_log", _config_string, "\"important\"", "HALO_CONSOLE_LOG", _environment_value, _platform_all,
 		"What the game's console shows on screen of what it logs: \"important\"\n"
@@ -490,51 +476,7 @@ static const struct config_setting config_settings[] =
 		"\"no\" never does, \"ask\" asks after the next crash and writes the answer\n"
 		"here." },
 
-#ifdef HALO_FEATURE_INFECTION
-	/* the experimental Infection mode (configure.py --infection) */
-	{ "infection.local_enabled", _config_boolean, "false", "HALO_INFECTION_LOCAL", _environment_value, _platform_all,
-		"Experimental Infection rules for LOCAL Slayer only (never LAN/online).\n"
-		"Off by default; use the local test launcher below, not network_test." },
-	{ "infection.rounds", _config_integer, "3", "HALO_INFECTION_ROUNDS", _environment_value, _platform_all,
-		"Local Infection rounds per match (1-100)." },
-	{ "infection.round_seconds", _config_integer, "180", "HALO_INFECTION_SECONDS", _environment_value, _platform_all,
-		"Local Infection round duration in seconds (1-3600)." },
-	{ "infection.alpha_count", _config_integer, "0", "HALO_INFECTION_ALPHAS", _environment_value, _platform_all,
-		"Local Infection Alpha count: 0 automatic, else 1-127 (leaves a Survivor)." },
-	{ "infection.respawn_seconds", _config_integer, "3", "HALO_INFECTION_RESPAWN", _environment_value, _platform_all,
-		"Local Infection respawn delay in seconds (0-60)." },
-	{ "infection.shotgun_rounds", _config_integer, "18", "HALO_INFECTION_SHOTGUN_ROUNDS", _environment_value, _platform_all,
-		"Survivor starting shotgun ammo, including loaded rounds (1-32767, limited by weapon)." },
-	{ "infection.pistol_rounds", _config_integer, "36", "HALO_INFECTION_PISTOL_ROUNDS", _environment_value, _platform_all,
-		"Survivor starting pistol ammo, including loaded rounds (1-32767, limited by weapon)." },
-	{ "infection.seed", _config_integer, "0", "HALO_INFECTION_SEED", _environment_value, _platform_all,
-		"Local Alpha selection seed: 0 automatic, nonzero for reproducible tests." },
-	{ "debug.infection_test_map", _config_string, "\"\"", "HALO_INFECTION_TEST_MAP", _environment_value, _platform_all,
-		"Opt-in local split-screen Infection launcher: Xbox map name (bloodgulch).\n"
-		"Requires infection.local_enabled. No network server is created." },
-	{ "debug.infection_test_players", _config_integer, "2", "HALO_INFECTION_TEST_PLAYERS", _environment_value, _platform_all,
-		"Local test split-screen players (2-4). Normal real player datums, not bots." },
-	{ "debug.infection_test_scenario", _config_string, "\"\"", "HALO_INFECTION_TEST_SCENARIO", _environment_value, _platform_all,
-		"Local test fixture only: empty for manual play; lifecycle scripts real\n"
-		"kills/respawns/conversions on three players across three rounds; melee\n"
-		"tests input restrictions and unarmed impact on a wounded target;\n"
-		"melee-full measures strikes on a full-health target; slayer-control\n"
-		"(infection.local_enabled false) is an ordinary Slayer regression." },
-#endif /* HALO_FEATURE_INFECTION */
 
-#ifdef HALO_FEATURE_BOTS
-	{ "debug.nav_probe", _config_boolean, "false", "HALO_NAV_PROBE", _environment_set_is_true, _platform_all,
-		"Opt-in BSP navigation walking probe controlling Bot 1 in a solo Slayer game.\n"
-		"No teleport or physics bypass; off in normal play." },
-	{ "debug.nav_dump", _config_string, "\"\"", "HALO_NAV_DUMP", _environment_value, _platform_all,
-		"Diagnostic walkable BSP polygon dump path (derived local data, not a map edit)." },
-	{ "debug.nav_goal", _config_string, "\"\"", "HALO_NAV_GOAL", _environment_value, _platform_all,
-		"Optional navigation probe goal as x,y,z in CE world units; empty picks a nearby region." },
-	{ "debug.bot_sandbox", _config_boolean, "false", "HALO_BOT_SANDBOX", _environment_set_is_true, _platform_all,
-		"Solo Team Slayer bot test fixture (requires three bots): seat the local\n"
-		"player in a parked Warthog and place teammate Bot 2 near the gunner entrance\n"
-		"once per map. The bot must approach and enter normally; off in normal play." },
-#endif /* HALO_FEATURE_BOTS */
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
@@ -607,11 +549,6 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
-	{ "debug.forge_test", _config_string, "\"\"", "HALO_FORGE_TEST", _environment_value, _platform_desktop,
-		"Scripted Forge edits once a game is under way, for automated tests\n"
-		"(port/linux/game/forge.c): \"edit\" opens Forge, flies, moves, turns,\n"
-		"places and deletes objects, saves, undoes and redoes, and closes it;\n"
-		"\"verify\" logs whether the saved edits are on the map; empty none." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,
@@ -655,6 +592,33 @@ static const struct config_setting config_settings[] =
 	{ "debug.sample_seconds", _config_real, "0.0", "HALO_SAMPLE", _environment_value, _platform_android,
 		"Log where every game thread is this often, in seconds (read by the\n"
 		"app, port/android/host/host_debug.c); 0 never." },
+
+/* Manifest-selected settings (tools/features.py). */
+#ifdef HALO_FEATURE_SETTINGS_1
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_1)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_2
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_2)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_3
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_3)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_4
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_4)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_5
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_5)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_6
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_6)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_7
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_7)
+#endif
+#ifdef HALO_FEATURE_SETTINGS_8
+#include HALO_SETTINGS_FILE(HALO_FEATURE_SETTINGS_8)
+#endif
+
 };
 
 #define NUMBER_OF_CONFIG_SETTINGS (sizeof(config_settings) / sizeof(config_settings[0]))
@@ -921,7 +885,6 @@ static void config_append_setting(struct config_text *text, const struct config_
 static char *config_default_text(void)
 {
 	struct config_text text = { NULL, 0, 0 };
-	char section[32] = "";
 	size_t index;
 
 #ifdef HALO_ANDROID
@@ -950,17 +913,35 @@ static char *config_default_text(void)
 		const struct config_setting *setting = &config_settings[index];
 		const char *dot = strchr(setting->name, '.');
 		char buffer[64];
+		size_t other, section_length;
 
 		if (!(setting->platforms & CONFIG_PLATFORM) || !dot)
 			continue;
-		if (strncmp(section, setting->name, (size_t)(dot - setting->name)) ||
-			section[dot - setting->name] != 0)
+		section_length = (size_t)(dot - setting->name);
+		/* Emit each section only at its first applicable setting, including
+		 * feature-owned settings that appear later in the table. */
+		for (other = 0; other < index; other++)
 		{
-			snprintf(section, sizeof(section), "%.*s", (int)(dot - setting->name), setting->name);
-			snprintf(buffer, sizeof(buffer), "\n[%s]\n", section);
-			config_append(&text, buffer);
+			const struct config_setting *previous = &config_settings[other];
+			const char *previous_dot = strchr(previous->name, '.');
+			if ((previous->platforms & CONFIG_PLATFORM) && previous_dot &&
+				(size_t)(previous_dot - previous->name) == section_length &&
+				!strncmp(previous->name, setting->name, section_length))
+				break;
 		}
-		config_append_setting(&text, setting);
+		if (other < index)
+			continue;
+		snprintf(buffer, sizeof(buffer), "\n[%.*s]\n", (int)section_length, setting->name);
+		config_append(&text, buffer);
+		for (other = index; other < NUMBER_OF_CONFIG_SETTINGS; other++)
+		{
+			const struct config_setting *member = &config_settings[other];
+			const char *member_dot = strchr(member->name, '.');
+			if ((member->platforms & CONFIG_PLATFORM) && member_dot &&
+				(size_t)(member_dot - member->name) == section_length &&
+				!strncmp(member->name, setting->name, section_length))
+				config_append_setting(&text, member);
+		}
 	}
 	return text.buffer;
 }

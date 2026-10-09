@@ -1,4 +1,4 @@
-#include "../source/game/infection_rules.h"
+#include "../source/features/infection/infection_rules.h"
 #include <assert.h>
 #include <stdio.h>
 

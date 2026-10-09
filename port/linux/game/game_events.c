@@ -56,6 +56,7 @@ Called each frame from game_stats_update (main.c).
 #include "../src/event_log.h"
 
 #include <stdio.h>
+#include "extensions/extension_api.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -1077,10 +1078,9 @@ void game_events_update(
 {
 	long tick;
 	boolean hosting = game_connection() == _game_connection_network_server;
-	/* (a game bots play in is not sent, source/game/bots.c: its recording
-	is dropped as a game that stopped is) */
-	boolean bots_game_had_bots(void);
-	boolean running = game_engine_running() && hosting && !bots_game_had_bots();
+	/* (a game an extension keeps out of reports, bots' say, is not sent:
+	its recording is dropped as a game that stopped is) */
+	boolean running = game_engine_running() && hosting && !halo_extensions_suppress_game_report();
 
 	if (!running)
 	{

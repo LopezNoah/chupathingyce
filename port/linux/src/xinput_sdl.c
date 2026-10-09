@@ -137,7 +137,7 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 	*yaw = 0.0f;
 	*pitch = 0.0f;
 	/* (Forge open: the motion is its camera's, halo_forge_input_read) */
-	if (gamepad_index != 0 || halo_forge_input_captured())
+	if (gamepad_index != 0 || halo_extensions_input_captured())
 		return FALSE;
 	if (read_at != config_changes())
 	{
@@ -1217,7 +1217,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			if (input.menus)
 				keyboard_gamepad(&input, &state->Gamepad);
 			/* (Forge open: the keys are its, halo_forge_input_read) */
-			else if (!halo_forge_input_captured())
+			else if (!halo_extensions_input_captured())
 				keyboard_controls(&input, &state->Gamepad);
 		}
 		if (port_gamepad(gamepads, count, 0))

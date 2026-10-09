@@ -6,19 +6,15 @@ EDITOR_STUBS.C
 
 #include "cseries.h"
 #include "editor_stubs.h"
-#ifdef HALO_64BIT
-#include "forge.h" /* port: port/linux/game/forge.c */
-#endif
+#include "extensions/extension_api.h"
 
 /* ---------- public code */
 
 void editor_render(
 	void)
 {
-#ifdef HALO_FORGE
-	/* port: Forge's selection and text over the view */
-	forge_render();
-#endif
+	/* port: editors' (Forge's) selection and text over the view */
+	halo_extensions_editor_render();
 	return;
 }
 
@@ -62,18 +58,14 @@ void editor_update(
 void editor_initialize_for_new_map(
 	void)
 {
-#ifdef HALO_FORGE
-	/* port: the map's Forge edits, before its objects are placed */
-	forge_initialize_for_new_map();
-#endif
+	/* port: editors' (Forge's) saved edits, before the objects are placed */
+	halo_extensions_editor_initialize_for_new_map();
 	return;
 }
 
 void editor_dispose_from_old_map(
 	void)
 {
-#ifdef HALO_FORGE
-	forge_dispose_from_old_map();
-#endif
+	halo_extensions_editor_dispose_from_old_map();
 	return;
 }

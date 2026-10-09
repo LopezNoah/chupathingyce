@@ -30,14 +30,34 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .version import VERSION_SOURCES, identity_defines, release_build, version
-from .linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DIR, OPTIMISATION, STB_DIR, WINDOWS_PROFILE,
-                          XDK_INCLUDE, feature_defines, game_browser_defines, lto_mode, march_flag, miniupnpc_sources, pgo_mode, compile_launcher, game_defines_and_includes,
-                          game_sources, musl_math_cflags, musl_math_sources, pgo_profile, profile_use_flags,
-                          xdk_headers)
-from .lp64_build import lp64_excluded
 from .embed_assets import hud_assets_build, hud_configure_inputs, ui_fonts_build
+from .linux_build import (
+    CUSTOM_EDITION_DEFINES,
+    LINUX_PROFILE,
+    MBEDTLS_DIR,
+    MINIUPNPC_DIR,
+    OPTIMISATION,
+    STB_DIR,
+    WINDOWS_PROFILE,
+    XDK_INCLUDE,
+    compile_launcher,
+    feature_defines,
+    game_browser_defines,
+    game_defines_and_includes,
+    game_sources,
+    lto_mode,
+    march_flag,
+    miniupnpc_sources,
+    musl_math_cflags,
+    musl_math_sources,
+    pgo_mode,
+    pgo_profile,
+    profile_use_flags,
+    xdk_headers,
+)
+from .lp64_build import lp64_excluded
 from .ninja_syntax import Writer
+from .version import VERSION_SOURCES, identity_defines, release_build, version
 
 LINUX_DIR = Path("port/linux")
 PORT_DIR = Path("port/windows")
@@ -511,7 +531,7 @@ def generate_windows_target(n: Writer, sln: Any, target: WindowsTarget) -> None:
             # Windows SDK, which has headers of the same names
             f"-I{XDK_INCLUDE}",
         ])
-        for source in game_sources(linux_config):
+        for source in game_sources(linux_config, sln):
             if source.as_posix() not in excluded:
                 add_object(source, game_cflags)
         for source in sorted(Path(linux_config["game_sources"]).glob("*.c")):

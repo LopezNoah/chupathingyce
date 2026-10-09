@@ -187,11 +187,8 @@ struct game_options;
 #include "rasterizer/common/rasterizer_common.h"
 #endif
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
-#include "bots.h" /* port: computer-controlled players */
-#include "navigation_world.h"
-#include "game_engine_infection.h"
+#include "extensions/extension_api.h"
 #ifdef HALO_64BIT
-#include "forge.h" /* port: port/linux/game/forge.c */
 #endif
 
 /* network_game_globals.c's */
@@ -376,8 +373,9 @@ void game_tick(
 	recorded_animations_update();
 	objects_update();
 	players_update_after_game();
-	/* Commit every death of this tick together, after object damage. */
-	infection_game_end_tick();
+	/* port: the active ruleset's tick end, after every death of this tick
+	(Infection commits them together; extension_api.h) */
+	halo_extensions_end_tick();
 	hud_update();
 	player_effect_update();
 	/* port: and at its end, before the frame draws the lights */
@@ -685,12 +683,8 @@ void game_initialize_for_new_map(
 
 	game_globals->active = TRUE;
 	objects_place();
-#ifdef HALO_FORGE
-	/* port: the objects Forge added to the map */
-	forge_objects_placed();
-#endif
-	/* port: no bots yet; they join once the game is under way (bots.c) */
-	bots_initialize_for_new_map();
+	/* port: extensions' (Forge's added objects, bots' new map; extension_api.h) */
+	halo_extensions_objects_placed();
 	if (!game_in_editor())
 		ai_place();
 	/* (the map's objects, placed as on the host: a distributed client's own
@@ -895,7 +889,7 @@ void game_precache_new_map(
 void game_dispose_from_old_map(
 	void)
 {
-	navigation_world_reset();
+	halo_extensions_dispose_from_old_map(); /* port: extension_api.h */
 	rasterizer_dispose_from_old_map();
 	game_state_dispose_from_old_map();
 	cheats_dispose_from_old_map();

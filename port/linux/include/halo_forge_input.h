@@ -68,8 +68,9 @@ struct halo_forge_input
 (Forge open), which the player's view then never gets */
 void halo_forge_input_read(struct halo_forge_input *input, int capture);
 
-/* whether Forge is open (forge.c): the keyboard and mouse then drive no
-player action and turn no player's view (xinput_sdl.c) */
-int halo_forge_input_captured(void);
+/* whether an editor (Forge) is open (source/extensions/extension_dispatch.c):
+the keyboard and mouse then drive no player action and turn no player's view
+(xinput_sdl.c) */
+int halo_extensions_input_captured(void);
 
 #endif

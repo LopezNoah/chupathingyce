@@ -46,7 +46,7 @@ with their unit, and with what it rides.
 int config_boolean(const char *name);
 unsigned long config_changes(void);
 
-#include "forge.h"
+#include "extensions/extension_api.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -524,12 +524,10 @@ real_matrix4x3 *render_interpolation_object_node_matrices(long object_index)
 
 	if (!interpolation_rendering || !interpolated_objects || object_index == NONE)
 		return NULL;
-#ifdef HALO_FORGE
-	/* (Forge open, the game paused: no ticks, and objects moved where they
-	are now, not in the snapshots) */
-	if (forge_active())
+	/* (an editor open, Forge's, the game paused: no ticks, and objects
+	moved where they are now, not in the snapshots) */
+	if (halo_extensions_editor_active())
 		return NULL;
-#endif
 	absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(object_index);
 	if (absolute_index >= MAXIMUM_INTERPOLATED_OBJECTS)
 		return NULL;
@@ -730,11 +728,9 @@ struct observer_result const *render_interpolation_camera(
 {
 	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS)
 		return observer;
-#ifdef HALO_FORGE
-	/* (Forge's camera moves every frame, the game paused: as it is) */
-	if (forge_active())
+	/* (an editor's camera moves every frame, the game paused: as it is) */
+	if (halo_extensions_editor_active())
 		return observer;
-#endif
 	return render_interpolation_direct_camera(local_player_index,
 		render_interpolation_blended_camera(local_player_index, observer));
 }

@@ -12,7 +12,7 @@
 #include "units/units.h"
 #include "units/biped_definitions.h"
 #include "cache/cache_files.h"
-#include "forge.h"
+#include "extensions/extension_api.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -86,9 +86,8 @@ const struct sn_resource *navigation_world_resource(void)
 {
     if (!world.requested_valid || world.active<0 ||
         !key_equal(world.resources[world.active].key,world.requested)) return NULL;
-#ifdef HALO_FORGE
-    if (world.resources[world.active].key.overlay_revision!=forge_navigation_revision()) return NULL;
-#endif
+    /* an editor (Forge) changed the world since it was built */
+    if (world.resources[world.active].key.overlay_revision!=halo_extensions_world_edit_revision()) return NULL;
     return &world.resources[world.active];
 }
 uint64_t navigation_world_obstacle_revision(void) { return world.obstacles; }
@@ -216,10 +215,8 @@ static void update_resource(long unit_index)
     agent.projection_height=agent.height;
     key.map_identity=name_hash(cache_file_loaded_map_name()); key.checksum=(uint32_t)cache_files_get_checksum();
     key.bsp_index=(uint32_t)global_structure_bsp_index; key.agent_identity=agent_hash(agent);
-    key.format_version=SN_FORMAT_VERSION; key.overlay_revision=0;
-#ifdef HALO_FORGE
-    key.overlay_revision=forge_navigation_revision();
-#endif
+    key.format_version=SN_FORMAT_VERSION;
+    key.overlay_revision=halo_extensions_world_edit_revision();
     if (!world.requested_valid || !key_equal(key,world.requested)) {
         world.requested=key; world.requested_valid=TRUE; world.cpu_time=0;
         if (world.dump) { fclose(world.dump); world.dump=NULL; }
@@ -308,12 +305,5 @@ bool navigation_world_segment_clear(void *context, struct sn_point a, uint32_t a
     return fabsf(clipped.x-b.x)<0.08f && fabsf(clipped.y-b.y)<0.08f &&
         fabsf(clipped.z-target_z)<0.15f;
 }
-
-#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
-
-/* Bot navigation is compiled out: no derived navigation data exists, so
-   the engine's reset and per-tick hooks have nothing to do. */
-void navigation_world_reset(void) {}
-void navigation_world_update_for_players(void) {}
 
 #endif /* HALO_FEATURE_BOTS */

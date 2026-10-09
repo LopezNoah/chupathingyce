@@ -26,11 +26,29 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from .linux_build import (CUSTOM_EDITION_DEFINES, LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DEFINES, MINIUPNPC_DIR, MUSL_MATH_DIR, STB_DIR,
-                          XDK_INCLUDE, compile_launcher, feature_defines, game_browser_defines, game_defines_and_includes, game_sources, miniupnpc_sources,
-                          musl_math_sources, pgo_mode, pgo_profile,
-                          profile_use_flags, updater_defines, xdk_headers)
 from .embed_assets import hud_assets_build, hud_configure_inputs, ui_fonts_build
+from .linux_build import (
+    CUSTOM_EDITION_DEFINES,
+    LINUX_PROFILE,
+    MBEDTLS_DIR,
+    MINIUPNPC_DEFINES,
+    MINIUPNPC_DIR,
+    MUSL_MATH_DIR,
+    STB_DIR,
+    XDK_INCLUDE,
+    compile_launcher,
+    feature_defines,
+    game_browser_defines,
+    game_defines_and_includes,
+    game_sources,
+    miniupnpc_sources,
+    musl_math_sources,
+    pgo_mode,
+    pgo_profile,
+    profile_use_flags,
+    updater_defines,
+    xdk_headers,
+)
 from .ninja_syntax import Writer
 from .version import VERSION_SOURCES
 
@@ -159,7 +177,7 @@ def _quote(path: Any) -> str:
     return f'"{text}"' if " " in text else text
 
 
-def _find_ndk() -> Optional[Path]:
+def _find_ndk() -> Path | None:
     for variable in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK"):
         if os.environ.get(variable) and Path(os.environ[variable]).is_dir():
             return Path(os.environ[variable])
@@ -454,7 +472,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         f"-iquote {Path(config['game_sources'])}",
         game_defines_and_includes(config), *libc_includes, f"-idirafter {XDK_INCLUDE}",
     ])
-    for source in game_sources(config):
+    for source in game_sources(config, sln):
         cflags = game_cflags
         if source.as_posix() in VARIADIC_PROTOTYPE_FILES:
             cflags += f" -include {PORT_DIR}/include/halo_android_variadic_prototypes.h"

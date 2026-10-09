@@ -1,0 +1,8 @@
+{
+  "name": "infection",
+  "order": 30,
+  "default": false,
+  "help": "Experimental local-only Infection rules",
+  "extension": true,
+  "settings": "settings.inc"
+}

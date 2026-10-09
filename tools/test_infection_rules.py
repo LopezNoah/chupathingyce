@@ -16,7 +16,7 @@ def run(cc, sanitize=False):
                    "-Wsign-conversion", "-Wshadow", "-Wstrict-prototypes",
                    "-Wmissing-prototypes", "-Wformat=2", "-Wundef", "-Werror",
                    "-I", str(ROOT / "source"),
-                   str(ROOT / "source/game/infection_rules.c"),
+                   str(ROOT / "source/features/infection/infection_rules.c"),
                    str(ROOT / "tools/test_infection_rules.c"), "-o", str(executable)]
         if sanitize:
             command += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]

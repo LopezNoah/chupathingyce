@@ -10,10 +10,11 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import tools.features as features
 from tools import ninja_syntax
 from tools.android_build import android_configure_inputs, generate_android_build
-from tools.linux_build import generate_linux_build, linux_configure_inputs
 from tools.linux64_build import generate_linux64_build, linux64_configure_inputs
+from tools.linux_build import generate_linux_build, linux_configure_inputs
 from tools.macos_build import generate_macos_build, macos_configure_inputs
 from tools.server_build import generate_server_build, server_configure_inputs
 from tools.version import commit_inputs
@@ -45,20 +46,7 @@ parser.add_argument(
     help="every build (Linux, Windows, macOS, Android; always the server's): the game list and server browser of halo.milenko.org "
     "(HALO_GAME_BROWSER; port/linux/src/browser.c); on unless --no-game-browser",
 )
-parser.add_argument(
-    "--infection",
-    action=argparse.BooleanOptionalAction,
-    default=False,
-    help="experimental Infection game mode (HALO_FEATURE_INFECTION; source/game/game_engine_infection.c, "
-    "docs/infection.md); off unless --infection",
-)
-parser.add_argument(
-    "--bots",
-    action=argparse.BooleanOptionalAction,
-    default=False,
-    help="experimental multiplayer bots and their navigation (HALO_FEATURE_BOTS; source/game/bots.c, "
-    "docs/bots.md); off unless --bots",
-)
+features.add_arguments(parser)
 parser.add_argument(
     "--lto",
     choices=["full", "thin", "off"],
@@ -108,8 +96,7 @@ sln = SimpleNamespace(
     compiler_launcher=args.compiler_launcher,
     port_release=args.release,
     game_browser=args.game_browser,
-    feature_infection=args.infection,
-    feature_bots=args.bots,
+    **features.selection(args),
     port_lto=args.lto,
     port_portable=args.portable,
     port_pgo=args.pgo,
@@ -158,6 +145,10 @@ n.build(
     implicit=[
         configure_script,
         Path("tools/ninja_syntax.py"),
+        Path("tools/features.py"),
+        *features.manifests(),
+        features.FEATURES_DIR,
+        *sorted(path for path in features.FEATURES_DIR.rglob("*") if path.is_dir()),
         *linux_configure_inputs(),
         *linux64_configure_inputs(),
         *android_configure_inputs(),

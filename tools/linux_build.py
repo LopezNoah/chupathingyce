@@ -10,10 +10,12 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any
 
+from . import features
 from .embed_assets import hud_assets_build, hud_configure_inputs, ui_fonts_build
 from .ninja_syntax import Writer
 from .version import VERSION_SOURCES, identity_defines, release_build, version
@@ -29,11 +31,11 @@ def xdk_headers() -> list[Path]:
     return sorted(XDK_INCLUDE.glob("*.h"))
 
 
-def game_sources(config: dict[str, Any]) -> list[Path]:
+def game_sources(config: dict[str, Any], sln: Any = None) -> list[Path]:
     """the game's C sources (port.json "game"): every one under its root but
     those excluded"""
     game = config["game"]
-    excluded = set(game.get("exclude", []))
+    excluded = set(game.get("exclude", [])) | features.excluded_sources(sln)
     return sorted(
         source for source in Path(game["root"]).rglob("*.c")
         if source.as_posix() not in excluded
@@ -225,11 +227,8 @@ def game_browser_defines(sln: Any) -> list[str]:
 
 
 def feature_defines(sln: Any) -> list[str]:
-    """configure.py --infection / --bots: experimental gameplay features,
-    compiled in only when asked for (off by default). Off, their integration
-    units build as no-ops and their settings are not offered."""
-    return ((["-DHALO_FEATURE_INFECTION"] if getattr(sln, "feature_infection", False) else [])
-            + (["-DHALO_FEATURE_BOTS"] if getattr(sln, "feature_bots", False) else []))
+    """Manifest-selected feature macros, extension registry and settings."""
+    return features.defines(sln)
 
 
 def march_flag(sln: Any) -> str:
@@ -245,7 +244,7 @@ def lto_mode(sln: Any) -> str:
     return getattr(sln, "port_lto", "full")
 
 
-def lto_flags(sln: Any, cache_dir: Path) -> Tuple[list[str], list[str]]:
+def lto_flags(sln: Any, cache_dir: Path) -> tuple[list[str], list[str]]:
     """compiler and linker flags for link-time optimisation with lld"""
     mode = lto_mode(sln)
     if mode == "off":
@@ -265,10 +264,10 @@ LINUX_PROFILE = PGO_DIR / "halo_linux.profdata"
 WINDOWS_PROFILE = PGO_DIR / "halo_windows.profdata"
 PROFILE_LLVM_MAJOR = 22
 
-_clang_majors: dict[str, Optional[int]] = {}
+_clang_majors: dict[str, int | None] = {}
 
 
-def clang_major(cc: str) -> Optional[int]:
+def clang_major(cc: str) -> int | None:
     """the major version of the clang named cc, or None if unknown"""
     if cc not in _clang_majors:
         try:
@@ -285,7 +284,7 @@ def pgo_mode(sln: Any) -> str:
     return getattr(sln, "port_pgo", "use")
 
 
-def pgo_profile(sln: Any, own: Optional[Path], others: Sequence[Path], cc: str) -> Optional[Path]:
+def pgo_profile(sln: Any, own: Path | None, others: Sequence[Path], cc: str) -> Path | None:
     """The profile a native build is optimised with: --pgo-profile's; with
     --pgo=train, the build's own profile (trained if it is missing);
     otherwise the first committed profile there is, its own first. None with
@@ -421,7 +420,7 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
         game_defines_and_includes(config),
         sdk_flags,
     ])
-    for source in game_sources(config):
+    for source in game_sources(config, sln):
         add_object(source, game_cflags)
     # Port-specific units that must see the game exactly as its own
     # sources do (port/linux/game).
@@ -523,7 +522,6 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
     obj_dir = build_dir / "obj"
     output = build_dir / "halo"
     cc = sln.linux_cc or "clang"
-    prefix_header = PORT_DIR / "include" / "halo_linux_prefix.h"
     semantics_header = build_dir / "halo_msvc_semantics.h"
     platform_semantics_header = build_dir / "platform_msvc_semantics.h"
 
@@ -598,7 +596,7 @@ def generate_linux_build(n: Writer, sln: Any) -> None:
                          embedded_assets=embedded_assets)
 
     def emit(obj_dir: Path, output: Path, extra_cflags: list[str], extra_ldflags: list[str],
-             implicit_inputs: list[Path], validator: Optional[Path] = None) -> None:
+             implicit_inputs: list[Path], validator: Path | None = None) -> None:
         """the objects and the executable, with the given extra flags (and
         the tag validator alone, tools/map_validate.c, as validator)"""
         objects = linux32_objects(n, units, obj_dir, extra_cflags, implicit_inputs)

@@ -10,7 +10,8 @@ It is not networked.** Online hosts and clients always play ordinary Slayer. See
 
 > **Feature flag:** Infection is compiled in only by `python3 configure.py
 > --infection` (then `ninja`), and is off by default. Without the flag, the
-> in-game adapter builds as no-ops, so every engine hook sees Infection inactive.
+> sources under `source/features/infection/` are excluded and no Infection
+> ruleset is registered, so the engine keeps its ordinary rules.
 > The `infection.*` and `debug.infection_*` settings are not offered, and the
 > test launcher never starts. The startup log reports `features: infection
 > on|off`, and the test checker fails with a rebuild hint on a build without it.
@@ -103,7 +104,7 @@ From the repository root, with a C compiler:
 
 ```sh
 clang -std=c11 -Wall -Wextra -Werror \
-  source/game/infection_rules.c tools/infection_prototype.c \
+  source/features/infection/infection_rules.c tools/infection_prototype.c \
   -o /tmp/infection-prototype
 /tmp/infection-prototype players=2
 ```

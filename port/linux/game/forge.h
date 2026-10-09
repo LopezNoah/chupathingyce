@@ -18,7 +18,7 @@ none of the game's calls into it, so their game code is as it was
 #include "cseries.h"
 #include <stdint.h>
 
-#if defined(HALO_64BIT) && !defined(HALO_SERVER) && !defined(HALO_ANDROID)
+#if defined(HALO_FEATURE_FORGE) && defined(HALO_64BIT) && !defined(HALO_SERVER) && !defined(HALO_ANDROID)
 #define HALO_FORGE 1
 #endif
 

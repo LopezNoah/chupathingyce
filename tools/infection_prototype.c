@@ -1,7 +1,7 @@
 /* Controlled local participants, not Spartans or network clients.
- * Compile with source/game/infection_rules.c; see docs/infection.md.
+ * Compile with source/features/infection/infection_rules.c; see docs/infection.md.
  */
-#include "../source/game/infection_rules.h"
+#include "../source/features/infection/infection_rules.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -101,7 +101,6 @@ symbols in this file:
 #include "console.h"
 #include "game_state.h"
 #include "game.h"
-#include "game/navigation_world.h"
 #include "tag_files.h"
 #include "cache_files.h"
 #include "scenario.h"
@@ -123,6 +122,7 @@ symbols in this file:
 #include "lruv_cache.h"
 #include "memory_pool.h"
 #include "cluster_partitions.h"
+#include "extensions/extension_api.h"
 
 void platform_log(const char *format, ...);
 
@@ -235,7 +235,7 @@ static void game_state_call_before_load_procs(
 	game_state_before_load_proc *proc = before_load_procs;
 	long i;
 
-	navigation_world_reset(); /* Derived state must not outlive a restored game. */
+	halo_extensions_invalidate_derived_state(); /* port: derived state must not outlive a restored game */
 	for (i =NUMBEROF(before_load_procs); i>0; i--, proc++)
 	{
 		(*proc)();

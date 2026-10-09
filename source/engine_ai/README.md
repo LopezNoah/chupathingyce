@@ -29,7 +29,7 @@ raw structs and pointers are not a wire format.
 
 ## Halo integration
 
-`source/game/bots.c` supplies perception, behavior leaves, a spawn-location
+`source/features/bots/bots.c` supplies perception, behavior leaves, a spawn-location
 navigation graph, weapon handling and player lifecycle. Accepted intents become
 Halo `player_action` inputs through the host queue. Native builds discover these
 C sources under `source/`; they are compiled into the macOS target.

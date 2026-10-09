@@ -64,6 +64,8 @@ Configuration (port/linux/src/port_config.c): bots.count (0..3), bots.skill.
 #include "engine_ai/intent.h"
 #include "engine_ai/navigation.h"
 #include "engine_ai/traversal.h"
+#include "extensions/extension_api.h"
+#include "navigation_world.h"
 
 #ifdef HALO_FEATURE_BOTS
 
@@ -2372,32 +2374,37 @@ static void bot_leave(
 	platform_log("bots: a bot left (solo Slayer host gate no longer permits bots)");
 }
 
-#else /* !HALO_FEATURE_BOTS: configure.py --bots builds the real code */
+/* ---------- extension registration (source/extensions/extension_api.h) */
 
-/* Bots are compiled out: no bot ever joins, and every query says so. */
-void bots_initialize_for_new_map(
+/* each tick, before the players' actions: the navigation world first, then
+the host's bots join or leave and decide their actions for its next update,
+as its local players' input goes there */
+static void bots_controller_update(
 	void)
 {
-	return;
+	navigation_world_update_for_players();
+	bots_update();
 }
 
-void bots_update(
-	void)
+static struct halo_player_controller const bots_controller =
 {
-	return;
-}
+	.update = bots_controller_update,
+	.controls_player = bots_player_is_bot,
+};
 
-boolean bots_game_had_bots(
-	void)
+struct halo_extension const bots_extension =
 {
-	return FALSE;
-}
-
-boolean bots_player_is_bot(
-	long player_index)
-{
-	(void)player_index;
-	return FALSE;
-}
+	.name = "bots",
+	/* no bots yet; they join once the game is under way */
+	.objects_placed = bots_initialize_for_new_map,
+	/* derived, host-local navigation never outlives its map, a restored
+	game or the tags it was built from */
+	.dispose_from_old_map = navigation_world_reset,
+	.invalidate_derived_state = navigation_world_reset,
+	/* a game bots played in is not reported to the game list, Delta Stats
+	or the event log */
+	.suppress_game_report = bots_game_had_bots,
+	.player_controller = &bots_controller,
+};
 
 #endif /* HALO_FEATURE_BOTS */

@@ -12,10 +12,10 @@ normal combat. Forge nav authoring is not implemented yet.
 - `source/engine_ai/surface_navigation.*`: dependency-light convex polygon resource,
   geometry validation, height-aware projection, budgeted deterministic BFS and
   center/portal routes. No Halo, ECS, timeline, renderer, heap or network types.
-- `source/game/navigation_world.*`: validated CE collision edge-ring adapter,
+- `source/features/bots/navigation_world.*`: validated CE collision edge-ring adapter,
   actual biped tag dimensions/slope, double-buffer publication, live CE capsule
   checks, temporary region blocking and incremental diagnostic dumps.
-- `source/game/navigation_probe.*`: one consumer that steers a living Bot 1 through
+- `source/features/bots/navigation_probe.*`: one consumer that steers a living Bot 1 through
   the ordinary `player_action` queue. It never sets positions, grants inventory,
   jumps, flies, or bypasses collision/physics. The normal solo-host Slayer gates
   still apply.

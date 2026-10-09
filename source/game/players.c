@@ -265,8 +265,7 @@ symbols in this file:
 #include "render/render_debug.h"
 #include "players.h"
 #include "player_queues_new.h"
-#include "bots.h" /* port: computer-controlled players */
-#include "navigation_world.h"
+#include "extensions/extension_api.h"
 #include "objects/objects.h"
 #include "saved games/game_state.h"
 #include "scenario/scenario.h"
@@ -279,7 +278,6 @@ symbols in this file:
 #include "units/biped_definitions.h"
 #include "units/bipeds.h"
 #include "units/units.h"
-#include "game/game_engine_infection.h"
 #include "units/vehicle_definitions.h"
 #include "units/vehicles.h"
 #ifdef HALO_64BIT
@@ -4503,10 +4501,10 @@ void players_update_before_game(
 	short action_index;
 
 	profile_enter(PLAYERS_UPDATE_BEFORE_GAME_PROFILE);
-	/* port: the host's bots join, and decide their actions for its next
-	update, as its local players' input goes there (bots.c) */
-	navigation_world_update_for_players();
-	bots_update();
+	/* port: player controllers, before the players' actions (the host's bots
+	join, and decide their actions for its next update, as its local players'
+	input goes there; extension_api.h) */
+	halo_extensions_update_player_controllers();
 	players_coop_note_on_foot();
 	players_coop_rescue_stranded();
 	if (update_client_dequeue(actions))
@@ -4516,8 +4514,8 @@ void players_update_before_game(
 		{
 			action_index = (short)iterator.datum_index;
 			action = &actions[action_index];
-			/* Host/local rules restrict all input sources, not only a pad. */
-			infection_game_filter_action(iterator.datum_index, action);
+			/* port: extension rules restrict every input source, not only a pad */
+			halo_extensions_filter_player_action(iterator.datum_index, action);
 			match_assert(
 				"c:\\halo\\SOURCE\\game\\players.c",
 				0x256,

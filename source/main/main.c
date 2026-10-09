@@ -397,7 +397,7 @@ symbols in this file:
 #include "input/input_abstraction.h"
 #include "interface/player_ui.h"
 #include "interface/marketing_and_strategic_business_development.h"
-#include "forge.h" /* port: port/linux/game/forge.c */
+#include "extensions/extension_api.h"
 #endif
 
 /* ---------- constants */
@@ -673,7 +673,6 @@ typedef char screenshot_and_framerate_globals_size_assert[
 	sizeof(struct _screenshot_and_framerate_globals) == 0x38B ? 1 : -1];
 
 void network_test_update(boolean main_menu_loaded, real seconds);
-void infection_game_test_update(boolean main_menu_loaded, real seconds);
 
 /* ---------- prototypes */
 
@@ -3346,7 +3345,7 @@ void main_loop(
 
 			/* automated system link tests (port/linux/game/network_test.c) */
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
-			infection_game_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
+			halo_extensions_main_frame_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{
@@ -3436,11 +3435,9 @@ void main_loop(
 					render_frame &= !game_engine_running() || game_time_get()>=3;
 
 					collision_log_continue_period(1);
-#ifdef HALO_FORGE
-					/* port: Forge, the map editor (port/linux/game/forge.c): every
-					frame, paused or not, before the director takes its camera */
-					forge_update(main_globals.seconds_elapsed);
-#endif
+					/* port: editors (Forge): every frame, paused or not, before the
+					director takes its camera (extension_api.h) */
+					halo_extensions_editor_update(main_globals.seconds_elapsed);
 					director_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					observer_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					collision_log_end_period();

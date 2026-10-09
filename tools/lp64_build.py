@@ -20,15 +20,15 @@ See port/macos/README.md.
 """
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .linux_build import (
     CUSTOM_EDITION_DEFINES,
     EXPAT_DIR,
     EXPAT_SOURCES,
-    GAME_FLAGS as LINUX_GAME_FLAGS,
     KCP_DIR,
     MBEDTLS_DIR,
     MINIUPNPC_DEFINES,
@@ -36,7 +36,6 @@ from .linux_build import (
     MONOCYPHER_DIR,
     MUSL_MATH_DIR,
     OPTIMISATION,
-    PLATFORM_FLAGS as LINUX_PLATFORM_FLAGS,
     QRCODEGEN_DIR,
     STB_DIR,
     TOML_DIR,
@@ -46,12 +45,18 @@ from .linux_build import (
     ZLIB_SOURCES,
     _quote,
     compile_launcher,
-    game_sources,
-    game_browser_defines,
     feature_defines,
+    game_browser_defines,
+    game_sources,
     miniupnpc_sources,
     musl_math_sources,
     updater_defines,
+)
+from .linux_build import (
+    GAME_FLAGS as LINUX_GAME_FLAGS,
+)
+from .linux_build import (
+    PLATFORM_FLAGS as LINUX_PLATFORM_FLAGS,
 )
 from .ninja_syntax import Writer
 from .version import VERSION_SOURCES
@@ -276,7 +281,7 @@ class Lp64Build:
             f"-iquote {_quote(lp64(Path(linux_config['game_sources'])))}",
             includes, f"-idirafter {xdk}",
         ])
-        for source in game_sources(linux_config):
+        for source in game_sources(linux_config, sln):
             if source.as_posix() not in excluded:
                 add(lp64(source), game_cflags)
         # the port's own units that see the game as its sources do (port/linux/game)
@@ -374,9 +379,11 @@ class Lp64Build:
         return units
 
     def objects(self, host: Lp64Host, generated_sources: list[Path], obj_dir: Path,
-                extra_cflags: list[str] = []) -> list[Path]:
+                extra_cflags: list[str] | None = None) -> list[Path]:
         """the objects of every unit, compiled into obj_dir; extra_cflags go
         to the units with the Xbox's ABI (link-time optimisation)"""
+        if extra_cflags is None:
+            extra_cflags = []
         objects = []
         extra = " ".join(extra_cflags)
         for unit in self.units(host, generated_sources):

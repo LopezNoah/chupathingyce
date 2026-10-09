@@ -185,7 +185,7 @@ static void forge_world_test_avatar(struct forge_target target)
         forge_avatar.unit_index = unit;
         forge_world_test_check(forge_avatar_origin_clear(&actual), "blocked-camera exit uses clear position");
         forge_avatar.unit_index = NONE;
-    } else forge_world_test_check(forge.active && game_time_get_paused(), "blocked exit stays in Forge safely");
+    } else forge_world_test_check(forge.active && !game_time_get_paused(), "blocked exit stays in live Forge safely");
 }
 
 static void forge_world_test_verify(struct forge_target target, struct halo_world_geometry const *geometry)
@@ -265,7 +265,7 @@ static void forge_world_test_update(real seconds)
     if (!strcmp(mode, "world-verify")) forge_world_test_verify(target, geometry);
     else {
         forge_open();
-        if (!forge_world_test_check(forge.active && game_time_get_paused(), "open paused")) return;
+        if (!forge_world_test_check(forge.active && !game_time_get_paused(), "open without pausing")) return;
         forge_world_test_check(forge_avatar.hidden_count > 0 &&
             TEST_FLAG(object_get(forge_avatar.unit_index)->object.flags, _object_invisible_bit), "avatar hidden");
         forge_world_test_edit(target, geometry);

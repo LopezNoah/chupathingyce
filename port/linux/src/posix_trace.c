@@ -47,10 +47,12 @@ static struct engine_trace_location const trace_frame_location = {
 static struct engine_trace_location const trace_zone_locations[HALO_TRACE_ZONE_COUNT] = {
 	{ "bot_ai", "source/features/bots/bots.c", 0 },
 	{ "map_precache", "source/game/game.c", 0 },
-	{ "scenario_load", "source/game/game.c", 0 }
+	{ "scenario_load", "source/game/game.c", 0 },
+	{ "texture_upload", "port/linux/src/xbox_textures.c", 0 }
 };
 static uint64_t trace_tick_index;
 static uint64_t trace_tick_allocations;
+static uint64_t trace_texture_upload_max_ns;
 static uint64_t trace_zone_started[HALO_TRACE_ZONE_COUNT];
 static int trace_zone_started_valid[HALO_TRACE_ZONE_COUNT];
 static int trace_tick_active;
@@ -64,7 +66,9 @@ static int trace_platform_register_counters(void)
 {
 	static char const *const names[HALO_TRACE_COUNTER_COUNT] = {
 		"texture_cache_hits", "texture_cache_misses", "texture_uploads",
-		"texture_evictions", "texture_gpu_bytes", "draw_calls",
+		"texture_evictions", "texture_gpu_bytes", "texture_budget_bytes",
+		"texture_over_budget", "texture_upload_bytes", "texture_upload_ns",
+		"texture_upload_max_ns", "draw_calls",
 		"allocations_per_tick", "map_precache_last_ns", "scenario_load_last_ns"
 	};
 	uint32_t index;
@@ -261,6 +265,17 @@ void halo_trace_zone_end(enum halo_trace_zone zone)
 				counter = HALO_TRACE_COUNTER_MAP_PRECACHE_LAST_NS;
 			else if (zone == HALO_TRACE_ZONE_SCENARIO_LOAD)
 				counter = HALO_TRACE_COUNTER_SCENARIO_LOAD_LAST_NS;
+			if (zone == HALO_TRACE_ZONE_TEXTURE_UPLOAD && elapsed <= (uint64_t)INT64_MAX)
+			{
+				engine_trace_counter_add(&trace_state,
+					trace_counter_ids[HALO_TRACE_COUNTER_TEXTURE_UPLOAD_NS], (int64_t)elapsed);
+				if (elapsed > trace_texture_upload_max_ns)
+				{
+					trace_texture_upload_max_ns = elapsed;
+					engine_trace_counter_set(&trace_state,
+						trace_counter_ids[HALO_TRACE_COUNTER_TEXTURE_UPLOAD_MAX_NS], (int64_t)elapsed);
+				}
+			}
 			if (counter < HALO_TRACE_COUNTER_COUNT && elapsed <= (uint64_t)INT64_MAX)
 				engine_trace_counter_set(&trace_state, trace_counter_ids[counter], (int64_t)elapsed);
 			trace_zone_started_valid[zone] = 0;

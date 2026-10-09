@@ -14,9 +14,39 @@ Recorded after the initial local Forge implementation and runtime checks.
 
 Open/close with F7 or B (configurable as `forge.toggle_key`; macOS may require Fn+F7). Mouse look; WASD fly; Space/C vertical movement; click select/drop; right-click or E grab; X/Y/Z choose roll/pitch/yaw and Q/R rotate; arrows and PgUp/PgDn nudge; `[`/`]` or wheel choose an item; P place; V duplicate; Delete delete; G snapping; Ctrl+Z undo; Ctrl+Y redo; Ctrl+S save; H help; Esc put back/deselect.
 
-The game is paused while Forge is open and the normal camera is restored on close. The host's loopback connection can show the game's “connection experiencing difficulties” warning while a solo System Link host is paused. This was observed in the test harness; it was not suppressed.
+Forge leaves simulation, the game clock, bots and networking running while its free camera is active. The normal camera is restored on close. Forge does not own pause state: an explicit pause remains under the ordinary pause controls and is not overwritten on close.
 
-## Validation performed
+The original implementation paused on entry and re-paused every frame. That stopped gameplay traffic on the host's loopback connection and produced the game's “connection experiencing difficulties” warning while flying. Removing Forge's pause ownership resolves the reproduced warning; it is not suppressed.
+
+## Live clock/network regression (2026-10-09)
+
+`tools/test_forge_clock.py --maps "$MAPS"` launches a hidden, loopback-only Blood
+Gulch Slayer host with isolated maps/saves and no desktop input injection. Add
+`--bots 3` to exercise the bot match. It waits for live gameplay, opens the real
+Forge camera for 12 seconds, checks tick advancement and absence of network-silence
+warnings, returns to the character, and checks that an explicit pause survives a
+subsequent Forge open/close.
+
+- Before the fix: entered at tick 120, paused 1; **0 ticks** in 12 seconds; the
+  exact `network client connection has been silent for a dangerously long amount
+  of time` warning appeared. This reproduced without bots or texture-cache pressure.
+- After the fix: **360 ticks** in 12 seconds, paused 0, both with zero bots and
+  three Spartan bots; clean timed exits, no connection-silence/endpoint-failure
+  messages. The explicit-pause ownership check also passed with three bots.
+- Native scripted edit/save/undo/redo and safe camera-to-avatar return passed
+  while unpaused in a separate hidden loopback Blood Gulch host.
+- macOS executable build and active Forge source diagnostics passed. Included
+  fixture files have no standalone LSP server; they are covered by compilation.
+- GLB local-play integration could not run in this build because its launcher
+  requires the disabled Infection local-play fixture. No new GLB validation is
+  claimed; existing world-test pause expectations were updated to live simulation.
+
+The earlier tests asserted that Forge paused rather than testing live clock and
+network progress. The new real-engine fixture covers that missing contract.
+Scratch artifacts remain in temporary `forge-clock-*` and `forge-live-edit-*`
+directories; original maps and normal player saves were not changed.
+
+## Original validation performed
 
 - `ninja macos` completed successfully. A warning-enabled compile of `forge.c` was also checked.
 - A scripted live-game edit test exercised opening, pausing, flying, object selection/movement/rotation, placing a Warthog, deleting, saving, undo/redo and closing.

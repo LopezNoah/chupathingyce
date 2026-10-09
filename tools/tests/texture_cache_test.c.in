@@ -1,0 +1,313 @@
+/* Included with the real cache/geometry by tools/test_texture_cache.py. */
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "halo_trace.h"
+
+typedef uint32_t DWORD, D3DCOLOR, GLuint, GLenum;
+typedef int BOOL;
+#define HALO_64BIT 1
+#define TRUE 1
+#define FALSE 0
+#define GL_TEXTURE_2D 0x0de1
+#define GL_TEXTURE_3D 0x806f
+#define GL_TEXTURE_CUBE_MAP 0x8513
+#define PLATFORM_CONTIGUOUS_BASE 0x80000000u
+#define PLATFORM_PHYSICAL_TO_VIRTUAL(data) ((uintptr_t)(data))
+#include "description.h"
+
+static long budget_mb = 1;
+static unsigned long serial = 1, generation = 1;
+static GLuint next_texture = 1;
+static int64_t counters[HALO_TRACE_COUNTER_COUNT];
+static uint64_t memory_bytes[3];
+static unsigned int uploads, deletes, invalidations;
+static BOOL fail_upload;
+static int no_cache;
+
+static long config_integer(const char *name)
+{
+    assert(strcmp(name, "graphics.texture_cache_mb") == 0);
+    return budget_mb;
+}
+static int config_boolean(const char *name) { (void)name; return no_cache; }
+static void platform_log(const char *format, ...) { (void)format; }
+static void *xbox_pointer(unsigned long address) { return (void *)(uintptr_t)address; }
+static BOOL platform_is_contiguous(const void *address) { (void)address; return TRUE; }
+static unsigned long memory_watch_serial(void) { return serial; }
+static unsigned long memory_watch_generation(unsigned long address, unsigned long size)
+{
+    (void)address; (void)size; return generation;
+}
+static void memory_watch_protect(unsigned long address, unsigned long size)
+{
+    (void)address; (void)size;
+}
+static void glGenTextures(int count, GLuint *texture)
+{
+    assert(count == 1); *texture = next_texture++;
+}
+static void glDeleteTextures(int count, const GLuint *texture)
+{
+    assert(count == 1); assert(*texture != 0); deletes++;
+}
+static void xgpu_gl_state_invalidate(void) { invalidations++; }
+static GLuint text_hires_atlas_texture(DWORD data) { (void)data; return 0; }
+static GLuint menu_art_texture(DWORD data, unsigned long *levels)
+{
+    (void)data; (void)levels; return 0;
+}
+static long hud_hires_override_find(unsigned long address, unsigned long width,
+    unsigned long height, unsigned long size)
+{
+    (void)address; (void)width; (void)height; (void)size; return -1;
+}
+static GLuint hud_hires_override_texture(long asset, unsigned long *levels)
+{
+    (void)asset; (void)levels; return 0;
+}
+static int hud_hires_override_coverage(long asset) { (void)asset; return 0; }
+static int hud_hires_override_point_threshold(long asset) { (void)asset; return 0; }
+static BOOL upload(GLuint texture, GLenum target,
+    const struct xgpu_texture_description *description, const unsigned char *base,
+    const D3DCOLOR *palette)
+{
+    assert(texture != 0); (void)target; (void)description; (void)base; (void)palette;
+    uploads++;
+    return !fail_upload;
+}
+void halo_trace_counter_add(enum halo_trace_counter counter, int64_t value)
+{
+    counters[counter] += value;
+}
+void halo_trace_counter_set(enum halo_trace_counter counter, int64_t value)
+{
+    counters[counter] = value;
+}
+void halo_trace_memory_reserve(enum halo_trace_memory_tag tag, uint64_t bytes)
+{
+    assert(bytes > 0);
+    memory_bytes[tag] += bytes;
+}
+void halo_trace_memory_release(enum halo_trace_memory_tag tag, uint64_t bytes)
+{
+    assert(bytes > 0);
+    assert(bytes <= memory_bytes[tag]); memory_bytes[tag] -= bytes;
+}
+void halo_trace_zone_begin(enum halo_trace_zone zone) { (void)zone; }
+void halo_trace_zone_end(enum halo_trace_zone zone) { (void)zone; }
+
+#include "production_cache.h"
+
+static DWORD format(unsigned int kind, unsigned int log_size)
+{
+    return (kind << D3DFORMAT_FORMAT_SHIFT) | (1u << D3DFORMAT_MIPMAP_SHIFT) |
+        (log_size << D3DFORMAT_USIZE_SHIFT) | (log_size << D3DFORMAT_VSIZE_SHIFT) |
+        (2u << D3DFORMAT_DIMENSION_SHIFT);
+}
+static GLuint request(DWORD data, unsigned int kind, unsigned int log_size,
+    const D3DCOLOR *palette)
+{
+    DWORD resource[5] = {0, data, 0, format(kind, log_size), 0};
+    GLenum target;
+    struct xgpu_texture_description description;
+    return xgpu_texture_get(resource, palette, &target, &description);
+}
+static BOOL contains(DWORD data)
+{
+    for (struct texture_entry *entry = texture_lru_first; entry; entry = entry->lru_next)
+        if (entry->data == data) return TRUE;
+    return FALSE;
+}
+static void check_accounting(void)
+{
+    uint64_t total = 0;
+    struct texture_entry *previous = NULL;
+    for (struct texture_entry *entry = texture_lru_first; entry; entry = entry->lru_next)
+    {
+        assert(entry->lru_previous == previous);
+        total += entry->estimated_gpu_bytes;
+        previous = entry;
+    }
+    assert(previous == texture_lru_last);
+    assert(total == texture_gpu_bytes_current);
+    assert(total == memory_bytes[HALO_TRACE_MEMORY_RENDER_GPU]);
+    assert(total == (uint64_t)counters[HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES]);
+}
+static void reset(void)
+{
+    texture_frame++;
+    while (texture_lru_last) texture_entry_drop(texture_lru_last);
+    assert(memory_bytes[HALO_TRACE_MEMORY_RENDER_CPU] == 0);
+    assert(memory_bytes[HALO_TRACE_MEMORY_RENDER_GPU] == 0);
+    memset(recent_textures, 0, sizeof(recent_textures));
+    memset(counters, 0, sizeof(counters));
+    uploads = 0; deletes = 0; invalidations = 0; budget_mb = 1; fail_upload = FALSE;
+    xgpu_texture_cache_begin_frame();
+}
+static void test_nonresident_eviction(void)
+{
+    reset();
+    /* Unsupported resources own a GL name, but allocate no texture storage.
+       HUD replacements also produce these nonresident cache entries. */
+    assert(request(1, 6, 13, NULL));
+    assert(uploads == 0 && texture_gpu_bytes_current == 0);
+    xgpu_texture_cache_begin_frame();
+    texture_entry_drop(texture_lru_last);
+    assert(deletes == 1);
+    check_accounting();
+}
+static void test_lru_and_protection(void)
+{
+    reset();
+    for (DWORD data = 1; data <= 4; data++) assert(request(data, 6, 8, NULL));
+    assert(texture_gpu_bytes_current == 1024u * 1024u);
+    xgpu_texture_cache_begin_frame();
+    GLuint b = request(2, 6, 8, NULL);
+    assert(uploads == 4); /* Recent-hit path also moves B to the LRU head. */
+    assert(request(5, 6, 8, NULL));
+    assert(!contains(1) && contains(2) && contains(3));
+    assert(request(6, 6, 8, NULL));
+    assert(!contains(3) && contains(2));
+    assert(request(4, 6, 8, NULL));
+    assert(request(7, 6, 8, NULL)); /* All four earlier requests are protected. */
+    assert(texture_gpu_bytes_current == 5u * 256u * 256u * 4u);
+    assert(counters[HALO_TRACE_COUNTER_TEXTURE_OVER_BUDGET] == 1);
+    assert(request(2, 6, 8, NULL) == b);
+    assert(uploads == 7 && deletes == 2 && invalidations == 2);
+    check_accounting();
+    xgpu_texture_cache_begin_frame();
+    assert(texture_gpu_bytes_current == 1024u * 1024u);
+    assert(!contains(5)); /* B's second hit made E the oldest, within one frame. */
+    assert(request(1, 6, 8, NULL)); /* Evicted recent pointer must not be reused. */
+    assert(uploads == 8);
+    check_accounting();
+}
+static void test_multiple_evictions(void)
+{
+    reset();
+    for (DWORD data = 1; data <= 4; data++) assert(request(data, 6, 8, NULL));
+    xgpu_texture_cache_begin_frame();
+    assert(request(1, 6, 8, NULL));
+    assert(request(5, 6, 9, NULL));
+    assert(deletes == 3 && contains(1) && contains(5));
+    assert(counters[HALO_TRACE_COUNTER_TEXTURE_OVER_BUDGET] == 1);
+    check_accounting();
+    xgpu_texture_cache_begin_frame();
+    assert(!contains(1) && contains(5));
+    assert(texture_gpu_bytes_current == 1024u * 1024u);
+    check_accounting();
+}
+static void test_oversized_and_budget_changes(void)
+{
+    reset();
+    assert(request(1, 6, 10, NULL)); /* A single 4 MiB texture in a 1 MiB cache. */
+    assert(texture_gpu_bytes_current == 4u * 1024u * 1024u);
+    assert(counters[HALO_TRACE_COUNTER_TEXTURE_OVER_BUDGET] == 1);
+    assert(request(1, 6, 10, NULL));
+    assert(uploads == 1);
+    xgpu_texture_cache_begin_frame();
+    assert(texture_gpu_bytes_current == 0 && !contains(1));
+    budget_mb = 8;
+    xgpu_texture_cache_begin_frame();
+    assert(request(1, 6, 10, NULL));
+    budget_mb = 1;
+    xgpu_texture_cache_begin_frame();
+    assert(texture_gpu_bytes_current == 0);
+    for (unsigned int i = 0; i < 3; i++)
+    {
+        budget_mb = i == 0 ? -1 : i == 1 ? 0 : 16385;
+        xgpu_texture_cache_begin_frame();
+        assert(texture_budget_bytes == 512u * 1024u * 1024u);
+    }
+    check_accounting();
+}
+static void test_invalidation_failure_and_idle(void)
+{
+    reset();
+    GLuint texture = request(1, 6, 8, NULL);
+    generation++; serial++;
+    assert(request(1, 6, 8, NULL) == texture);
+    assert(uploads == 2 && texture_gpu_bytes_current == 256u * 256u * 4u);
+    generation++; serial++; fail_upload = TRUE;
+    assert(request(1, 6, 8, NULL));
+    assert(texture_gpu_bytes_current == 0);
+    fail_upload = FALSE;
+    assert(request(1, 6, 8, NULL));
+    assert(uploads == 4); /* Failure cannot leave a stale recent-hit shortcut. */
+    check_accounting();
+    for (unsigned int frame = 0; frame < 2400; frame++)
+        xgpu_texture_cache_begin_frame();
+    assert(!contains(1) && texture_gpu_bytes_current == 0);
+    check_accounting();
+}
+static void test_palette_protection(void)
+{
+    reset();
+    D3DCOLOR palette[256] = {0};
+    GLuint textures[10];
+    for (unsigned int i = 0; i < 10; i++)
+    {
+        palette[0] = i;
+        textures[i] = request(1, 0x0b, 4, palette);
+        for (unsigned int j = 0; j < i; j++) assert(textures[i] != textures[j]);
+    }
+    assert(uploads == 10); /* Variant cap must not overwrite a current-frame texture. */
+    palette[0] = 0;
+    assert(request(1, 0x0b, 4, palette) == textures[0]);
+    assert(uploads == 10);
+    xgpu_texture_cache_begin_frame();
+    palette[0] = 100;
+    assert(request(1, 0x0b, 4, palette));
+    assert(uploads == 11);
+    check_accounting();
+}
+static void test_estimates(void)
+{
+    struct xgpu_texture_description d = {0};
+    d.width = 5; d.height = 7; d.depth = 1; d.levels = 3;
+    d.format = 6; d.pitch = 4096; d.linear = TRUE;
+    assert(texture_gpu_size_estimate(&d) == (35u + 6u + 1u) * 4u);
+    d.cube_map = TRUE;
+    assert(texture_gpu_size_estimate(&d) == (35u + 6u + 1u) * 4u * 6u);
+    d.cube_map = FALSE; d.linear = FALSE; d.depth = 8;
+    assert(texture_gpu_size_estimate(&d) == (35u * 8u + 6u * 4u + 2u) * 4u);
+    d.depth = 1; d.compressed = TRUE; d.format = 0x0c;
+    assert(texture_gpu_size_estimate(&d) == (4u + 1u + 1u) * 8u);
+    d.format = 0x0f; d.cube_map = TRUE;
+    assert(texture_gpu_size_estimate(&d) == (4u + 1u + 1u) * 16u * 6u);
+}
+int main(int argc, char **argv)
+{
+    (void)argv;
+    if (argc > 1)
+    {
+        no_cache = 1;
+        reset();
+        GLuint texture = request(1, 6, 8, NULL);
+        for (unsigned int i = 0; i < 3; i++) assert(request(1, 6, 8, NULL) == texture);
+        assert(uploads == 4);
+        assert(texture_gpu_bytes_current == 256u * 256u * 4u);
+        check_accounting();
+        reset();
+        puts("no-cache stress mode: OK");
+        return 0;
+    }
+    /* A request before the first Present must already respect the budget. */
+    assert(request(1, 6, 10, NULL));
+    assert(texture_budget_bytes == 1024u * 1024u);
+    assert(counters[HALO_TRACE_COUNTER_TEXTURE_OVER_BUDGET] == 1);
+    check_accounting();
+    test_estimates();
+    test_nonresident_eviction();
+    test_lru_and_protection();
+    test_multiple_evictions();
+    test_oversized_and_budget_changes();
+    test_invalidation_failure_and_idle();
+    test_palette_protection();
+    reset();
+    puts("LRU, frame protection, accounting, invalidation, palettes and estimates: OK");
+    return 0;
+}

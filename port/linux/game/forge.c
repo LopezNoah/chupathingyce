@@ -3,8 +3,9 @@ FORGE.C
 
 Forge, the map editor in the game (forge.h). forge.toggle_key (F7 or B by
 default) opens it in a game on this machine: a campaign level, or a
-multiplayer game nobody else is in. The game pauses, and the keyboard and
-mouse fly a free camera (halo_forge_input.h) and edit the map's objects:
+multiplayer game nobody else is in. Simulation and networking keep running;
+the keyboard and mouse fly a free camera (halo_forge_input.h) and edit the
+map's objects:
 
 	mouse              look                 W A S D        fly
 	Space / C          up / down            Shift / Alt    faster / slower
@@ -57,8 +58,8 @@ typedef int forge_compiled_out;
 
 #else
 
-#include "cseries/cseries_windows.h"
-#include "camera/director.h"
+/* CreateDirectoryA's port declaration is needed by overlay saves. */
+#include "cseries/cseries_windows.h" // IWYU pragma: keep
 #include "camera/flying_camera.h"
 #include "camera/observer.h"
 #include "camera/static_camera.h"
@@ -69,7 +70,6 @@ typedef int forge_compiled_out;
 #include "game/players.h"
 #include "interface/hud_messaging.h"
 #include "math/real_math.h"
-#include "objects/object_definitions.h"
 #include "objects/object_types.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
@@ -86,7 +86,8 @@ typedef int forge_compiled_out;
 
 #include "halo_forge_input.h"
 
-#include <math.h>
+/* Used by included camera/character handoff helpers. */
+#include <math.h> // IWYU pragma: keep
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -242,7 +243,6 @@ static struct
 	/* open */
 	boolean active;
 	short local_player_index;
-	boolean was_paused;
 	boolean camera_reset[MAXIMUM_LOCAL_PLAYERS];
 	struct flying_camera camera;
 	struct halo_forge_input input;
@@ -1714,8 +1714,6 @@ static void forge_open(
 	}
 	forge.local_player_index = local_player_index;
 	if (!forge_avatar_begin()) return;
-	forge.was_paused = game_time_get_paused();
-	game_time_set_paused(TRUE);
 	observer = observer_get_camera(local_player_index);
 	flying_camera_new(&forge.camera);
 	if (observer)
@@ -1742,8 +1740,6 @@ static void forge_close(
 	} else forge_avatar_restore();
 	forge.active = FALSE;
 	csmemset(&forge.selected, 0, sizeof(forge.selected));
-	if (game_in_progress())
-		game_time_set_paused(forge.was_paused);
 	for (local_player_index = 0; local_player_index < MAXIMUM_LOCAL_PLAYERS; local_player_index++)
 		forge.camera_reset[local_player_index] = TRUE;
 	if (forge_unsaved())
@@ -2361,6 +2357,7 @@ boolean forge_active(
 }
 
 #include "forge_world_test.inc"
+#include "forge_clock_test.inc"
 
 void forge_update(
 	real seconds)
@@ -2374,6 +2371,7 @@ void forge_update(
 
 	if (forge.map_loaded && game_in_progress()) forge_world_apply_loaded();
 	forge_world_test_update(seconds);
+	forge_clock_test_update(seconds);
 	forge_test_update(seconds);
 	halo_forge_input_read(&input, forge.active);
 	if (forge.active)
@@ -2399,9 +2397,8 @@ void forge_update(
 		forge.previous_input = input;
 		return;
 	}
-	/* (the pause menu's Resume would start the game under Forge) */
-	if (!game_time_get_paused())
-		game_time_set_paused(TRUE);
+	/* Forge owns the camera/input, not the simulation clock. Normal pause
+	controls remain independent; keep host loopback traffic and bots alive. */
 	/* a selection whose object is gone (a script deleted it, a BSP switch) */
 	if (forge.selected.kind != _forge_target_none && forge.selected.kind != _forge_target_world &&
 		forge_target_object(&forge.selected) == NONE)

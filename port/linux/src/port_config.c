@@ -85,6 +85,13 @@ struct config_setting
 #define DEFAULT_AUDIO_BUFFER_FRAMES "512"
 #endif
 
+/* Desktop residency is deliberately generous; low limits are stress tests. */
+#ifdef HALO_ANDROID
+#define DEFAULT_TEXTURE_CACHE_MB "256"
+#else
+#define DEFAULT_TEXTURE_CACHE_MB "512"
+#endif
+
 /* Computed includes keep settings owned by each discovered feature. */
 #define HALO_SETTINGS_PATH_(name) features/name/settings.inc
 #define HALO_SETTINGS_STRING_(path) #path
@@ -587,6 +594,12 @@ static const struct config_setting config_settings[] =
 		"A folder to write every texture to as it is uploaded; empty none." },
 	{ "debug.texture_log", _config_boolean, "false", "HALO_TEXTURE_LOG", _environment_set_is_true, _platform_all,
 		"Log texture uploads." },
+	{ "graphics.texture_cache_mb", _config_integer, DEFAULT_TEXTURE_CACHE_MB,
+		"HALO_TEXTURE_CACHE_MB", _environment_value, _platform_all,
+		"Estimated OpenGL texture cache budget in MiB (1..16384). Current-frame\n"
+		"textures are protected, so rendering may temporarily exceed it.\n"
+		"Excludes render targets, high-res replacements and driver overhead.\n"
+		"Very low limits are for stress testing, not normal play." },
 	{ "debug.texture_no_cache", _config_boolean, "false", "HALO_TEXTURE_NO_CACHE", _environment_set_is_true, _platform_all,
 		"Upload textures again every time they are used." },
 	{ "debug.sample_seconds", _config_real, "0.0", "HALO_SAMPLE", _environment_value, _platform_android,

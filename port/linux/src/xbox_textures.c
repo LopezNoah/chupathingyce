@@ -21,6 +21,7 @@ memory_watch.c detects that by write-protecting the pages.
 #include "port_config.h"
 #include "halo_trace.h"
 
+#include <assert.h>
 #include <stdio.h>
 #ifdef HALO_ANDROID
 #define GL_BGRA GL_RGBA
@@ -741,6 +742,7 @@ static BOOL upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 struct texture_entry
 {
 	struct texture_entry *next;
+	struct texture_entry *lru_previous, *lru_next;
 	DWORD data, format_word, size_word;
 	unsigned long palette_hash;
 	GLuint texture;
@@ -780,6 +782,75 @@ static struct
 static unsigned long texture_drop_serial = 1;
 static unsigned long texture_frame = 0;
 static uint64_t texture_gpu_bytes_current;
+static uint64_t texture_budget_bytes;
+/* Most recently requested first, including nonresident entries. All entries
+used this frame form a protected prefix; the tail is the next eviction. */
+static struct texture_entry *texture_lru_first, *texture_lru_last;
+
+static void texture_cache_read_budget(void)
+{
+	long budget_mb = config_integer("graphics.texture_cache_mb");
+
+	/* Config values are signed; reject invalid limits before converting. */
+	if (budget_mb < 1 || budget_mb > 16384)
+	{
+		static BOOL warned;
+		if (!warned)
+			platform_log("textures: texture_cache_mb must be 1..16384; using the default");
+		warned = TRUE;
+#ifdef HALO_ANDROID
+		budget_mb = 256;
+#else
+		budget_mb = 512;
+#endif
+	}
+	texture_budget_bytes = (uint64_t)budget_mb * 1024u * 1024u;
+	halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_BUDGET_BYTES, (int64_t)texture_budget_bytes);
+}
+
+static void texture_entry_unlink_lru(struct texture_entry *entry)
+{
+	if (entry->lru_previous)
+		entry->lru_previous->lru_next = entry->lru_next;
+	else
+		texture_lru_first = entry->lru_next;
+	if (entry->lru_next)
+		entry->lru_next->lru_previous = entry->lru_previous;
+	else
+		texture_lru_last = entry->lru_previous;
+}
+
+static void texture_entry_touch(struct texture_entry *entry)
+{
+	entry->last_used_frame = texture_frame;
+	if (texture_lru_first == entry)
+		return;
+	if (entry->lru_previous || entry->lru_next || texture_lru_last == entry)
+		texture_entry_unlink_lru(entry);
+	entry->lru_previous = NULL;
+	entry->lru_next = texture_lru_first;
+	if (texture_lru_first)
+		texture_lru_first->lru_previous = entry;
+	else
+		texture_lru_last = entry;
+	texture_lru_first = entry;
+}
+
+static void texture_entry_release_gpu(struct texture_entry *entry)
+{
+	assert(entry->estimated_gpu_bytes <= texture_gpu_bytes_current);
+	glDeleteTextures(1, &entry->texture);
+	entry->texture = 0;
+	xgpu_gl_state_invalidate();
+	/* Replacement-only entries have a GL name but no accounted allocation.
+	The trace allocator requires strictly positive reserve/release sizes. */
+	if (entry->estimated_gpu_bytes)
+		halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_GPU, entry->estimated_gpu_bytes);
+	texture_gpu_bytes_current -= entry->estimated_gpu_bytes;
+	entry->estimated_gpu_bytes = 0;
+	halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
+		(int64_t)texture_gpu_bytes_current);
+}
 
 static uint64_t texture_gpu_size_estimate(const struct xgpu_texture_description *description)
 {
@@ -816,6 +887,78 @@ static unsigned long bucket_index(DWORD data, DWORD format_word, DWORD size_word
 		(unsigned long)size_word * 3266489917UL;
 
 	return ((hash & 0xffffffffUL) >> 20) % TEXTURE_BUCKET_COUNT;
+}
+
+static void texture_entry_drop(struct texture_entry *entry)
+{
+	struct texture_entry **link = &texture_buckets[
+		bucket_index(entry->data, entry->format_word, entry->size_word)];
+
+	assert(entry->last_used_frame != texture_frame);
+	while (*link != entry)
+	{
+		assert(*link != NULL);
+		link = &(*link)->next;
+	}
+	*link = entry->next;
+	texture_entry_unlink_lru(entry);
+	texture_entry_release_gpu(entry);
+	/* Invalidate remembered pointers before freeing the entry. */
+	texture_drop_serial++;
+	halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_EVICTIONS, 1);
+	halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_CPU, sizeof(*entry));
+	free(entry);
+}
+
+/* A soft limit: never sacrifice current-frame textures to satisfy it. */
+static BOOL texture_cache_make_room(uint64_t additional_bytes)
+{
+	while (additional_bytes > texture_budget_bytes ||
+		texture_gpu_bytes_current > texture_budget_bytes - additional_bytes)
+	{
+		if (!texture_lru_last || texture_lru_last->last_used_frame == texture_frame)
+			return FALSE;
+		texture_entry_drop(texture_lru_last);
+	}
+	return TRUE;
+}
+
+static void texture_entry_upload(struct texture_entry *entry, const D3DCOLOR *palette)
+{
+	uint64_t const gpu_bytes = texture_gpu_size_estimate(&entry->description);
+	BOOL uploaded;
+
+	/* Geometry and GPU format are immutable for this cache key. */
+	assert(gpu_bytes != UINT64_MAX);
+	assert(!entry->estimated_gpu_bytes || entry->estimated_gpu_bytes == gpu_bytes);
+	if (!texture_cache_make_room(gpu_bytes - entry->estimated_gpu_bytes))
+		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_OVER_BUDGET, 1);
+	halo_trace_zone_begin(HALO_TRACE_ZONE_TEXTURE_UPLOAD);
+	uploaded = upload(entry->texture, entry->target, &entry->description,
+		(const unsigned char *)xbox_pointer(entry->address), palette);
+	halo_trace_zone_end(HALO_TRACE_ZONE_TEXTURE_UPLOAD);
+	if (uploaded)
+	{
+		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_UPLOADS, 1);
+		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_UPLOAD_BYTES, (int64_t)gpu_bytes);
+		if (!entry->estimated_gpu_bytes)
+		{
+			assert(gpu_bytes <= (uint64_t)INT64_MAX - texture_gpu_bytes_current);
+			entry->estimated_gpu_bytes = gpu_bytes;
+			texture_gpu_bytes_current += gpu_bytes;
+			halo_trace_memory_reserve(HALO_TRACE_MEMORY_RENDER_GPU, gpu_bytes);
+			halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
+				(int64_t)texture_gpu_bytes_current);
+		}
+	}
+	else
+	{
+		/* Discard partial storage and retry on the next request. */
+		texture_entry_release_gpu(entry);
+		glGenTextures(1, &entry->texture);
+		entry->generation = 0;
+		texture_drop_serial++;
+	}
 }
 
 /* palettized textures are cached per palette contents: the game rewrites
@@ -901,7 +1044,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		entry = recent_textures[recent].entry;
 		if (recent_textures[recent].watch_serial == watch_serial)
 		{
-			entry->last_used_frame = texture_frame;
+			texture_entry_touch(entry);
 			halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_HITS, 1);
 			return texture_entry_result(entry, target, description);
 		}
@@ -916,7 +1059,8 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 				if (entry->palette_hash == hash)
 					break;
 				variant_count++;
-				if (!oldest_variant || entry->last_used_frame < oldest_variant->last_used_frame)
+				if (entry->last_used_frame != texture_frame &&
+					(!oldest_variant || entry->last_used_frame < oldest_variant->last_used_frame))
 					oldest_variant = entry;
 			}
 		}
@@ -925,7 +1069,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_HITS, 1);
 	else
 		halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_CACHE_MISSES, 1);
-	if (!entry && variant_count >= MAXIMUM_PALETTE_VARIANTS)
+	if (!entry && oldest_variant && variant_count >= MAXIMUM_PALETTE_VARIANTS)
 	{
 		/* a palette that keeps changing reuses the stalest copy */
 		entry = oldest_variant;
@@ -970,6 +1114,10 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		*bucket = entry;
 	}
 
+	/* Protect this entry before an upload can evict other entries. */
+	texture_entry_touch(entry);
+	if (!texture_budget_bytes)
+		texture_cache_read_budget();
 	if (no_cache < 0)
 		no_cache = config_boolean("debug.texture_no_cache");
 	/* (its pages' newest generation, found again only once a watched page
@@ -1034,26 +1182,10 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 					entry->description.height, entry->size, entry->generation,
 					ones * 100 / entry->size, zeros * 100 / entry->size);
 			}
-			if (upload(entry->texture, entry->target, &entry->description,
-				(const unsigned char *)xbox_pointer(entry->address), palette))
-			{
-				uint64_t const gpu_bytes = texture_gpu_size_estimate(&entry->description);
-				halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_UPLOADS, 1);
-				if (!entry->estimated_gpu_bytes && gpu_bytes != UINT64_MAX &&
-					gpu_bytes <= UINT64_MAX - texture_gpu_bytes_current)
-				{
-					entry->estimated_gpu_bytes = gpu_bytes;
-					texture_gpu_bytes_current += gpu_bytes;
-					halo_trace_memory_reserve(HALO_TRACE_MEMORY_RENDER_GPU, gpu_bytes);
-					if (texture_gpu_bytes_current <= (uint64_t)INT64_MAX)
-						halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
-							(int64_t)texture_gpu_bytes_current);
-				}
-			}
+			texture_entry_upload(entry, palette);
 		}
 	}
-	entry->last_used_frame = texture_frame;
-	if (!palettized && !no_cache)
+	if (!palettized && !no_cache && entry->generation)
 	{
 		recent_textures[recent].data = data;
 		recent_textures[recent].format_word = format_word;
@@ -1067,41 +1199,14 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 
 void xgpu_texture_cache_begin_frame(void)
 {
-	unsigned long index;
-
+	texture_cache_read_budget();
 	texture_frame++;
+	/* Previous-frame protection has expired. Trim temporary oversubscription
+	now, even if the next frame only makes cache hits. */
+	(void)texture_cache_make_room(0);
 	if (texture_frame % 600)
 		return;
-	/* drop textures that have not been used for a while */
-	for (index = 0; index < TEXTURE_BUCKET_COUNT; index++)
-	{
-		struct texture_entry **link = &texture_buckets[index];
-
-		while (*link)
-		{
-			struct texture_entry *entry = *link;
-
-			if (texture_frame - entry->last_used_frame > TEXTURE_IDLE_FRAMES)
-			{
-				*link = entry->next;
-				glDeleteTextures(1, &entry->texture);
-				xgpu_gl_state_invalidate();
-				texture_drop_serial++;
-				if (entry->estimated_gpu_bytes)
-				{
-					halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_GPU, entry->estimated_gpu_bytes);
-					texture_gpu_bytes_current -= entry->estimated_gpu_bytes;
-					halo_trace_counter_set(HALO_TRACE_COUNTER_TEXTURE_GPU_BYTES,
-						(int64_t)texture_gpu_bytes_current);
-				}
-				halo_trace_counter_add(HALO_TRACE_COUNTER_TEXTURE_EVICTIONS, 1);
-				halo_trace_memory_release(HALO_TRACE_MEMORY_RENDER_CPU, sizeof(*entry));
-				free(entry);
-			}
-			else
-			{
-				link = &entry->next;
-			}
-		}
-	}
+	while (texture_lru_last &&
+		texture_frame - texture_lru_last->last_used_frame > TEXTURE_IDLE_FRAMES)
+		texture_entry_drop(texture_lru_last);
 }

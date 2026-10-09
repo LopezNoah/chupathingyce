@@ -7,8 +7,8 @@ written grouped by section. */
 	{ "forge.toggle_key", _config_string, "\"F7, B\"", "HALO_FORGE_TOGGLE_KEY", _environment_value, _platform_desktop,
 		"Opens and closes Forge, the map editor, in a game on this machine (a\n"
 		"campaign level, or a multiplayer game nobody else is in): up to two keys,\n"
-		"separated by a comma, named as in [controls]; empty for none. The game\n"
-		"pauses while it is open. Its edits are kept beside the maps, in\n"
+		"separated by a comma, named as in [controls]; empty for none. Simulation\n"
+		"and the game clock keep running. Its edits are kept beside the maps, in\n"
 		"forge\\<map>.forge.json, and the map's own file is never changed." },
 	{ "forge.selector_asset", _config_string, "\"\"", "HALO_FORGE_SELECTOR_ASSET", _environment_value, _platform_desktop,
 		"PNG reticle while no object is selected: absolute path or relative to paths.data.\n"
@@ -25,5 +25,6 @@ written grouped by section. */
 		"places and deletes objects, saves, undoes and redoes, and closes it;\n"
 		"\"verify\" logs whether the saved edits are on the map; world tests GLB edits\n"
 		"and safe character return; world-verify checks saved GLB poses; world-view\n"
-		"holds that test's Forge view for screenshots; world-alpha-above/below/grazing\n"
+		"holds that test's Forge view for screenshots; flight-clock verifies that\n"
+		"ticks and networking continue during flight; world-alpha-above/below/grazing\n"
 		"isolate the transparent grid for render checks. Empty disables all fixtures." },

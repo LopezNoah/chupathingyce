@@ -1,4 +1,4 @@
-/* Forge camera/character handoff. Flight stays noclip while physics is paused.
+/* Forge camera/character handoff. Flight stays noclip while simulation runs.
  * Never unhide a biped at an unchecked origin: validate its full physics pill,
  * including map, native objects and extension geometry. */
 #include "physics/collision_features.h"

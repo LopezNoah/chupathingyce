@@ -22,6 +22,19 @@ the full screen, the frame rate, the volumes, internet play, the
 multiplayer HUD), the profile's controller settings, and the keyboard and
 mouse's controls.
 
+In a game, the pause menus are the maps' own. The widgets named `in_game/...`
+(`ce/in_game.xml`, also from `tools/port_settings.py`) are built in the game's
+maps instead of `ui.map`, with only what they lead to (the screens they open,
+and their bitmaps and strings): they are drawn with the pause menus' art,
+which `ui.map` has not. `in_game/settings_button` is SETTINGS, which multiplayer pause menus get
+after RESUME GAME and a single-player campaign gets before REVERT TO SAVED
+(`port/linux/game/menu_tags.c`), on the desktop. Its screen opens Edit
+Profile's Controls Setup, Gamepads, Mouse Setup, Audio Setup and Video Setup
+over the pause menu's dim. It pauses a campaign but not a network game. The
+settings save to `config.toml` as they do from the main menu; Gamepads saves
+only the active profile's controller settings (`port active profile edit
+begin` and `end`).
+
 To change the menus without building the game, put files in a `menus` folder
 next to `config.toml`. A file with the same path as one here replaces it. On
 the desktop, any other `.xml` file there is added too. A PNG that a `<frame>`
@@ -29,6 +42,39 @@ names is found there first. If any file has a problem, the log names the
 file, the line and the problem, and the game uses the Xbox's menus. The
 setting `display.menus = "xbox"` also uses them. `debug.menu_open` starts on
 one screen (by its name, `main_menu/settings_select/...`), for looking at it.
+
+## Writing them again
+
+`tools/ce_menus.py` writes every file in `ce/` and `menus.json` again,
+the settings screens too (it runs `tools/port_settings.py`'s):
+
+```sh
+python3 tools/ce_menus.py \
+    --tags <halopc-restored>/tags \
+    --definitions <invader>/src/tag/hek/definition \
+    --redraws <ui-svg-handmade> \
+    --placeholder <placeholder.png> \
+    --pictures <extracted-ui-assets-fixed>
+```
+
+- `--tags`: the PC version's tags (its `ui\shell` widgets, strings and
+  bitmaps).
+- `--definitions`: Invader's tag definitions, which say how the tags are
+  laid out.
+- `--redraws`: the hand-made SVG redraws, copied to `svg/`.
+- `--placeholder`: the picture drawn where a picture has no redraw and the
+  Xbox's map has not got it.
+- `--pictures` (optional): the PC version's pictures, of which only where
+  each sits in its frame is read.
+
+It needs `rsvg-convert`, Pillow, NumPy and SciPy. It writes every file, so
+`git status` should show only the screens meant to change; then
+`ninja linux` (or `ninja android`) embeds them in the game.
+
+A settings screen (Controls Setup, Gamepads, Mouse, Audio, Video or Network
+Setup) is changed in `tools/port_settings.py`, not in its XML, and written
+with the command above. Teamplay Options also has the port's VOTE KICK
+spinner (`network.votekick`), generated with the multiplayer widgets.
 
 ## Elements
 

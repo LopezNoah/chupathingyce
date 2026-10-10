@@ -27,6 +27,9 @@ Conventions carried over from the Xbox:
 #include "port_config.h"
 #include "halo_trace.h"
 #include "halo_frame_stats.h"
+#include "main/console.h"
+
+#include <SDL3/SDL.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -1158,6 +1161,10 @@ static BOOL surface_is_shadow_map(const D3DSurface *surface)
 		description.height == SHADOW_MAP_SIZE;
 }
 
+/* the secondary render target, the size of the Xbox's (rasterizer_xbox.c) */
+#define SECONDARY_TARGET_WIDTH 320
+#define SECONDARY_TARGET_HEIGHT 240
+
 /* the targets render_target_get found last, by what it found them from:
 each draw asks again for the same two (bind_targets) */
 #define RECENT_RENDER_TARGET_COUNT 4
@@ -1210,9 +1217,13 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 		}
 	}
 	surface_dimensions(surface, &width, &height, &depth);
-	/* the screen's targets are drawn at the screen's scale, and the shadow
-	maps at display.shadow_resolution's (halo_shadow_map_scale) */
-	if (width == (unsigned long)halo_screen_width() && height == SCREEN_HEIGHT)
+	/* the screen's targets are drawn at the screen's scale, and so is the
+	secondary target (the reflections' and active camouflage's: its size is
+	rasterizer_xbox.c's), which keeps the game's 320x240 units, that its
+	shaders' constants are in, and gets the screen's pixels a unit; the
+	shadow maps at display.shadow_resolution's (halo_shadow_map_scale) */
+	if ((width == (unsigned long)halo_screen_width() && height == SCREEN_HEIGHT) ||
+		(!depth && width == SECONDARY_TARGET_WIDTH && height == SECONDARY_TARGET_HEIGHT))
 	{
 		scale[0] = screen_scale[0];
 		scale[1] = screen_scale[1];
@@ -1855,10 +1866,9 @@ HRESULT WINAPI Direct3D_CreateDevice(UINT adapter, D3DDEVTYPE device_type, void 
 /* ---------- the menus' pointer */
 
 /* a point in the window, as SDL reports it, in the menus' coordinates: the
-inverse of the letterboxed display blit at presentation, the screen's
-width and the menus' centering (halo_screen_ui_offset); x and y are -1 if
-there is no back buffer or window yet */
-static void ui_point_from_window(float window_x, float window_y, short *x, short *y)
+inverse of the letterboxed display blit at presentation; the scoreboard is
+not centered as the menus are. */
+static void ui_point_from_window_on(float window_x, float window_y, int centered, short *x, short *y)
 {
 	struct render_target_entry *back_buffer = render_target_get(&device.back_buffer);
 	int window_width, window_height, pixel_width, pixel_height, width, height, left, top;
@@ -1882,9 +1892,37 @@ static void ui_point_from_window(float window_x, float window_y, short *x, short
 	top = (pixel_height - height) / 2;
 	screen_x = (window_x * pixel_width / window_width - left) * (float)back_buffer->target.width / (float)width;
 	screen_y = (window_y * pixel_height / window_height - top) * (float)back_buffer->target.height / (float)height;
-	*x = (short)floorf(screen_x - (float)(halo_screen_width() - 640) / 2.0f);
+	*x = (short)floorf(screen_x - (centered ? (float)(halo_screen_width() - 640) / 2.0f : 0.0f));
 	*y = (short)floorf(screen_y);
 }
+
+static void ui_point_from_window(float window_x, float window_y, short *x, short *y)
+{
+	ui_point_from_window_on(window_x, window_y, TRUE, x, y);
+}
+
+#ifdef HALO_ANDROID
+int halo_scoreboard_pointer_update(int offered, struct halo_ui_pointer *pointer)
+{
+	(void)offered;
+	(void)pointer;
+	return -1;
+}
+#else
+int halo_scoreboard_pointer_update(int offered, struct halo_ui_pointer *pointer)
+{
+	struct platform_ui_pointer state;
+
+	memset(pointer, 0, sizeof(*pointer));
+	if (!platform_scoreboard_pointer(offered != 0, &state) || !device.gl_ready)
+		return 0;
+	ui_point_from_window_on(state.x, state.y, FALSE, &pointer->x, &pointer->y);
+	ui_point_from_window_on(state.click_x, state.click_y, FALSE, &pointer->click_x, &pointer->click_y);
+	pointer->moved = state.moved != FALSE;
+	pointer->left_clicks = (unsigned char)(state.left_clicks < 255 ? state.left_clicks : 255);
+	return 1;
+}
+#endif
 
 int halo_ui_pointer_update(int menus_active, struct halo_ui_pointer *pointer)
 {
@@ -4829,6 +4867,110 @@ void halo_screen_anti_alias(short x0, short y0, short x1, short y1)
 
 /* ---------- presentation */
 
+static void write_key_screenshot(struct render_target_entry *target)
+{
+	char directory[512], path[640], timestamp[32], filename[64];
+	SDL_Time now;
+	SDL_DateTime date;
+	SDL_Surface *surface = NULL;
+	unsigned int collision;
+	unsigned long width = target->target.gl_width, height = target->target.gl_height;
+	GLint framebuffer, draw_framebuffer, pack_buffer, alignment, row_length, skip_rows, skip_pixels;
+	GLenum error;
+	unsigned long row, column;
+
+	if (snprintf(directory, sizeof(directory), "%s/screenshots", platform_data_root()) >= (int)sizeof(directory))
+	{
+		SDL_SetError("Screenshot directory path is too long");
+		goto failed;
+	}
+	if (!SDL_CreateDirectory(directory) || !SDL_GetCurrentTime(&now) || !SDL_TimeToDateTime(now, &date, true))
+		goto failed;
+	snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02d_%02d.%02d.%02d",
+		date.year, date.month, date.day, date.hour, date.minute, date.second);
+	for (collision = 0; collision < 1000; collision++)
+	{
+		if (collision)
+			snprintf(filename, sizeof(filename), "%s_%u.png", timestamp, collision + 1);
+		else
+			snprintf(filename, sizeof(filename), "%s.png", timestamp);
+		snprintf(path, sizeof(path), "%s/%s", directory, filename);
+		if (!SDL_GetPathInfo(path, NULL))
+			break;
+	}
+	if (collision == 1000)
+	{
+		SDL_SetError("Too many screenshots with the same timestamp");
+		goto failed;
+	}
+	if (!width || !height || width > INT_MAX / 4 || height > INT_MAX)
+	{
+		SDL_SetError("Invalid screenshot dimensions");
+		goto failed;
+	}
+#ifdef HALO_ANDROID
+	surface = SDL_CreateSurface((int)width, (int)height, SDL_PIXELFORMAT_RGBA32);
+#else
+	surface = SDL_CreateSurface((int)width, (int)height, SDL_PIXELFORMAT_BGRA32);
+#endif
+	if (!surface)
+		goto failed;
+
+	/* Read the render target before the display blit's vertical flip. Its
+	row zero is the top of the image. Preserve the caller's readback state. */
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &framebuffer);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_framebuffer);
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pack_buffer);
+	glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+	glGetIntegerv(GL_PACK_ROW_LENGTH, &row_length);
+	glGetIntegerv(GL_PACK_SKIP_ROWS, &skip_rows);
+	glGetIntegerv(GL_PACK_SKIP_PIXELS, &skip_pixels);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(target->target.texture, 0));
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+	glPixelStorei(GL_PACK_ALIGNMENT, 4);
+	glPixelStorei(GL_PACK_ROW_LENGTH, surface->pitch / 4);
+	glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+	glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+	glReadPixels(0, 0, (GLsizei)width, (GLsizei)height,
+#ifdef HALO_ANDROID
+		GL_RGBA,
+#else
+		GL_BGRA,
+#endif
+		GL_UNSIGNED_BYTE, surface->pixels);
+	error = glGetError();
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, pack_buffer);
+	glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+	glPixelStorei(GL_PACK_ROW_LENGTH, row_length);
+	glPixelStorei(GL_PACK_SKIP_ROWS, skip_rows);
+	glPixelStorei(GL_PACK_SKIP_PIXELS, skip_pixels);
+	if (error != GL_NO_ERROR)
+	{
+		SDL_SetError("OpenGL screenshot readback failed (%04x)", (unsigned)error);
+		goto failed;
+	}
+	/* Destination alpha is scratch data in the game, not transparency. */
+	for (row = 0; row < height; row++)
+	{
+		unsigned char *pixels = (unsigned char *)surface->pixels + (size_t)row * surface->pitch;
+
+		for (column = 0; column < width; column++)
+			pixels[column * 4 + 3] = 0xff;
+	}
+	if (!SDL_SavePNG(surface, path))
+		goto failed;
+	SDL_DestroySurface(surface);
+	console_printf(FALSE, "Saved screenshot as %s", filename);
+	return;
+
+failed:
+	console_printf(FALSE, "Screenshot failed: %.180s", SDL_GetError());
+	if (surface)
+		SDL_DestroySurface(surface);
+}
+
 static void write_screenshot(struct render_target_entry *target)
 {
 	const char *directory = *config_string("debug.screenshot_directory") ?
@@ -4930,6 +5072,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 #endif
 		if (screenshot_every > 0 && device.frame % (unsigned long)screenshot_every == 0)
 			write_screenshot(back_buffer);
+		if (platform_screenshot_take_request())
+			write_key_screenshot(back_buffer);
 
 		platform_video_drawable_size(&window_width, &window_height);
 		/* letterbox to the back buffer's aspect ratio */
@@ -4962,7 +5106,10 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 #ifdef HALO_ANDROID
 		if (xgpu_capabilities.atomic_counters)
 		{
-			/* this frame's counts, for when the GPU is done with it */
+			/* this frame's counts, for when the GPU is done with it (the
+			barrier makes the shaders' counter writes visible to the copy,
+			which ES 3.1 does not promise without one) */
+			glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
 			glBindBuffer(GL_COPY_READ_BUFFER, device.visibility_counters);
 			glBindBuffer(GL_COPY_WRITE_BUFFER, device.counter_snapshots[device.buffer_ring]);
 			glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0,

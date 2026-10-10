@@ -77,6 +77,8 @@ symbols in this file:
 #include "saved games/game_state.h"
 /* port/linux/game/network_distributed.c's */
 void network_distributed_tick(void);
+/* port/linux/src/port_config.c's */
+double config_real(const char *name);
 
 /* ---------- constants */
 
@@ -346,6 +348,10 @@ void game_time_start(
 	match_assert("c:\\halo\\SOURCE\\game\\game_time.c", 562, game_time_globals);
 
 	game_time_globals->speed = 1.f;
+	/* port: debug.game_speed, for tests run faster than real time (a
+	client runs at the host's speed: game_time_get_speed) */
+	if (config_real("debug.game_speed") > 0.0)
+		game_time_set_speed((real)config_real("debug.game_speed"));
 	game_time_globals->leftover_dt = 0;
 	game_time_globals->active = TRUE;
 

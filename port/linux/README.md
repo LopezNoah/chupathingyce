@@ -237,6 +237,12 @@ stay. The Xbox's pause box is drawn taller to hold them (a redraw,
 what is below its list moves down. The few pictures of the settings that
 come from the main menu's map are not drawn there.
 
+A single-player campaign's pause menu has SETTINGS before REVERT TO SAVED,
+opening the same in-game settings over the pause dim while the game stays
+paused. Its row is centred if the list has room, otherwise the list keeps its
+original bounds and the rows are spaced over their original span. Gamepads'
+OK saves the active profile's controller settings.
+
 The menus are XML files in `port/assets/menus` (`tools/ce_menus.py` writes
 them from the PC version's tags), which the game contains. To change them,
 put files in a `menus` folder next to `config.toml`: a file with the same
@@ -296,8 +302,11 @@ the setting for one start of the game. It has priority over the file.
 | `debug.gpu_flush_draws` | `-1` | `HALO_GPU_FLUSH_DRAWS` | Flush the GPU's pipeline every this many draws. `-1`: every 3 on Intel graphics with Mesa's driver, which can otherwise hang in the game's long runs of small draws and reset the desktop's graphics too. `0`: never. |
 | `display.interpolation` | `true` | `HALO_INTERPOLATION` | `true`: one frame for each refresh of the display. `false`: 30 frames each second, as on the Xbox. Refer to "Frame rate". |
 | `display.direct_camera` | `true` | `HALO_DIRECT_CAMERA` | `true`: in first person, on foot, the view points where the player aims in each frame, not where the last tick left it. Refer to "Frame rate". |
+| `display.fov` | `0.0` | `HALO_FOV` | The first-person view's field of view on foot, in degrees across at 16:9, from 20 to 150. `0`: the stock view. Refer to "Field of view". |
+| `display.viewmodel_fov` | `0.0` | `HALO_VIEWMODEL_FOV` | The first-person weapon's and hands' field of view, in degrees across at 16:9, from 20 to 150. `0`: the weapon's stock view, also when `display.fov` widens the world. Refer to "Field of view". |
+| `display.viewmodel_visible` | `true` | `HALO_VIEWMODEL_VISIBLE` | `true`: the first-person weapon, hands and what is attached to them are drawn. `false`: they are not; firing, animation, sound and lights go on, and other players' models are drawn. |
 | `display.high_res_hud` | `true` | `HALO_HIGH_RES_HUD` | `true`: the HUD (meters, counters, panels and their outlines, the motion sensor, reticles, waypoints, scopes) is drawn from the high-res assets in `port/assets/hud`, 8x the size of the maps' bitmaps. The bitmaps with English text keep the maps' own. `false`: the maps' own bitmaps. |
-| `display.high_res_text` | `true` | `HALO_HIGH_RES_TEXT` | `true`: the menus' and HUD's text is drawn with the fonts in `port/assets/fonts` (Overpass, in place of the maps' Interstate) at the resolution the game draws at, laid out as before, and the menus' titles are drawn from the high-res pictures in `port/assets/titles`. `false`: the maps' bitmap fonts and titles. |
+| `display.high_res_text` | `true` | `HALO_HIGH_RES_TEXT` | `true`: the menus' and HUD's text is drawn with the fonts in `port/assets/fonts` (Overpass, in place of the maps' Interstate) at the resolution the game draws at, laid out as before; menus' titles and controller-button icons are drawn from `port/assets/titles` and `port/assets/buttons`. `false`: the maps' bitmap fonts, titles and button icons. |
 | `display.shadow_resolution` | `128` | `HALO_SHADOW_RESOLUTION` | The size of the maps that the shadows of the objects are drawn in, in pixels each way: `128`, `256`, `512` or `1024` (other values go down to one of these). The game draws the shadow of each object into a map of 128x128 pixels, blurs it and projects it onto the ground. On a large screen, the edges of these shadows show steps that move when the object moves. A larger map makes the edges smooth; the blur is made wider to match, so the shadows are as soft as on the Xbox. Each doubling adds two passes of the blur. `128`: as on the Xbox. |
 | `display.menus` | `"xbox"` | `HALO_MENUS` | `"xbox"`: the Xbox's menus, with Online Games (ChupathingyCE's default). `"pc"`: the PC version's menus, from the files in `port/assets/menus` and a `menus` folder next to `config.toml`. Refer to "Menus". |
 | `display.player_names` | `"all"` | `HALO_PLAYER_NAMES` | In multiplayer, whose names are drawn above their heads: `"all"`, `"allies"`, `"enemies"` or `"none"`. An ally's name is drawn above the triangle the game shows over teammates. An enemy's name shows only within the motion sensor's reach, while the enemy is in sight and not camouflaged, so it never shows where an enemy hides. The gametype's motion tracker setting also applies: no names if it shows no players, only allies' if it shows only friends. |
@@ -323,6 +332,7 @@ the setting for one start of the game. It has priority over the file.
 | `game.downloaded_maps` | `""` | `HALO_DOWNLOADED_MAPS` | Maps to play as downloaded maps, until the game downloads maps itself: their names as the game names them (`bloodgulch`, `hugeass@ce`), separated by commas, or `"*"` for all the maps. The scripts of a downloaded map cannot change the settings of the player or the games of other players. `debug.txt` names what the game refused. |
 | `game.console_log` | `"important"` | `HALO_CONSOLE_LOG` | What the console shows on the screen. `"important"`: bans, players that the host drops for cheating, the reasons that the game refuses a command, and the asserts that stop the game. `"all"`: all the lines. `"none"`: only the asserts that stop the game. The output of a command always shows. `debug.txt` gets all the lines. |
 | `game.language` | `""` | `HALO_LANGUAGE` | The language of the menus: `ja`, `de`, `fr`, `es` or `it`. Empty: English. |
+| `game.enhanced_animations` | `true` | `HALO_ENHANCED_ANIMATIONS` | `true`: the player bipeds' grenade throws keep their legs moving, blended by speed and direction (crouched throws stay crouched, throws in the air use the jump's legs), Warthog and Scorpion riders stay seated to throw and let go of the grips to throw and reload, and a player turns with the aim while throwing, as while meleeing. `false`: the original animations, which freeze the legs during a throw and stand a rider up. Only in config.toml, not in the menus. |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
 | `paths.saves` | `""` | `HALO_SAVE_ROOT` | The save root. Refer to "Files and folders". |
 | `network.address` | `""` | `HALO_NET_ADDRESS` | The IPv4 address of this machine for system link. Refer to "Play on one computer". |
@@ -342,6 +352,9 @@ the setting for one start of the game. It has priority over the file.
 | `network.coop_enemies_mode` | `"per_player"` | `HALO_NET_COOP_ENEMIES_MODE` | Online co-op's extra enemies: `"none"`; `"per_player"`, each squad of enemies that a level places grows by `network.coop_enemies` for each player past the first; or `"multiplier"`, each squad is `network.coop_enemies_multiplier` times as large, for any number of players. The extra enemies stand around the squad's places, and those that a dropship has no seats for drop out of it after its passengers. EXTRA ENEMIES in co-op's Server Setup writes its choice here. |
 | `network.coop_enemies` | `50` | `HALO_NET_COOP_ENEMIES` | The extra enemies per player, a percentage from `25` to `200`: for each player past the first, each squad of enemies gets this much of itself more (`100`: as many again, so four players meet four times the squad), up to 8 times the squad however many players there are. PER PLAYER in co-op's Server Setup writes its choice here. |
 | `network.coop_enemies_multiplier` | `2` | `HALO_NET_COOP_ENEMIES_MULTIPLIER` | The static multiplier of the enemies, `2` to `32`: each squad of enemies is this many times as large. MULTIPLIER in co-op's Server Setup writes its choice here. |
+| `network.votekick` | `true` | `HALO_NET_VOTEKICK` | When you host: `true`, the players can vote to kick a player. Refer to "Security". `false`: no votes. |
+| `network.votekick_minutes` | `5` | `HALO_NET_VOTEKICK_MINUTES` | When you host: the minutes that a player must play on the server before the player can start a vote to kick (`0` to `60`). To vote, a player must play for 2 minutes, or for this time if it is less. |
+| `network.votekick_ban_minutes` | `30` | `HALO_NET_VOTEKICK_BAN_MINUTES` | When you host: the minutes that a player who is kicked by a vote cannot join again (`1` to `1440`). |
 | `network.coop_public` | `false` | `HALO_NET_COOP_PUBLIC` | `true`: an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in co-op's Server Setup writes its choice here. Refer to "Server browser". |
 | `network.brokers_file` | `"brokers.txt"` | `HALO_NET_BROKERS_FILE` | The file of the public MQTT brokers that let the machines of an invite find each other, and that carry the listings of the server browser: next to `config.toml`, unless a full path. One `host:port` on each line, up to 4; `#` starts a comment. |
 | `network.stun_servers` | Google and Cloudflare | `HALO_NET_STUN` | The public STUN servers (`host:port`, with commas between them) that give the internet address of a machine. |
@@ -351,6 +364,7 @@ the setting for one start of the game. It has priority over the file.
 | `crash_reports.upload` | `"ask"` | `HALO_CRASH_REPORTS` | Desktop builds (releases and nightlies). `"yes"`: the game sends a report of each crash to the developers, through `network.browser_url`. `"no"`: the game sends no reports. `"ask"`: the game asks after the next crash (on Linux and macOS, when it starts the next time) and writes the answer here. Refer to "Crash reports" below and in [port/windows/README.md](../windows/README.md#crash-reports). |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds. `0`: never. |
+| `debug.game_speed` | `1.0` | `HALO_GAME_SPEED` | For tests: how fast each game runs, as the `game_speed` script command sets it (`1` real time, up to `100`). A frame runs at most 30 ticks in a network game (7 in a local one), so with `debug.null_renderer` and `display.max_fps` `-1` a game runs as fast as the machine can. A client of another's game runs at the host's speed. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
 | — | — | `HALO_TRACE_FILE` | Opt-in trace. Every 300 presented frames, writes a JSON summary to this path, replacing the prior report. The parent directory must exist. Reports include `D3DDevice_Present` frame p95/p99, texture-cache hits/misses/uploads/evictions, draw calls for the latest sampled frame, allocations in the latest game tick, CPU zones for bot/navigation AI and map/scenario loading, and current/peak tagged memory. `map_precache_last_ns` measures the `game_precache_new_map` call (for non-blocking requests, only its enqueue/setup time); `scenario_load_last_ns` measures the `scenario_load` call, not all later map initialization. Both retain the most recent durations even after their zone events leave the ring. The `bot_ai` zone covers navigation-world updates and bot decisions, not Halo campaign AI. Its totals/counts/maxima cover the retained event window. Frame timing includes swap and pacing waits. Texture GPU bytes are estimates for the Xbox texture cache only (not driver overhead, render targets, or high-resolution replacement textures); the `game` tag counts allocated Xbox contiguous pages, not RSS. `allocations_per_tick` counts successful `debug_malloc`/`debug_realloc` calls and game-state arena allocations during the latest simulation tick; it excludes libc, SDL, and graphics-driver allocations. Texture event/upload-byte counters and `texture_upload_ns` are cumulative; `texture_gpu_bytes` and `texture_budget_bytes` are gauges, and `texture_upload_max_ns` is a lifetime maximum. Upload timings include CPU decode and synchronous GL waits, not isolated GPU execution. Draw calls and allocations are latest-sample values; frame percentiles and the `texture_upload` CPU zone cover the retained ring window. |
 | `debug.hidden_window`, `debug.null_renderer` | `false` | `HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER` | `true`: no visible window, or no graphics. |
@@ -412,6 +426,10 @@ Each frame shows the world between the last two ticks
   the last tick.
 - Rotations use quaternions. Positions and scales are linear.
 - A teleport, a respawn or a cut of the camera does not mix. It jumps.
+- After a long frame (several ticks in one frame), the camera mixes the
+  last tick only, as the objects do.
+- In cinematics, a camera that moves with an object (the lifepod in a30,
+  a Pelican) moves with the object as it is drawn.
 
 Thus the frames are one tick (33 ms) after the calculation. The calculation
 does not change.
@@ -436,6 +454,29 @@ the world (such as `rasterizer_wireframe`). Refer to `NETCODE.md`.
 
 The frame rate shows at the bottom right of the screen. It is the mean over
 half a second.
+
+## Field of view
+
+Video Setup's FOV AND VIEWMODELS screen sets the field of view of the
+first-person view (`display.fov`) and of the weapon and hands
+(`display.viewmodel_fov`), from 80 to 150 degrees in steps of 5, and can
+hide the weapon (`display.viewmodel_visible`). DEFAULT, the setting's `0`,
+keeps the stock view. `config.toml` takes any angle from 20 to 150.
+
+- An angle is across the screen at 16:9. Another shape keeps the same
+  angle up and down, as the stock view does.
+- The field of view applies on foot in first person only. Vehicles, death,
+  cinematics and scripted cameras keep their own view.
+- A scope's zoom levels keep their stock view: the extra width fades out as
+  the zoom comes in. A view narrower than the stock one narrows the zoom
+  too.
+- The reticles scale with the view, so that they stay on the aim. The
+  scopes' pictures keep their place.
+- By default the weapon keeps its stock view when the world is wider:
+  arms and a gun right against the camera stretch at a wide angle.
+
+Only this machine's view changes. Nothing the machines send each other
+changes, so players with different settings play together.
 
 ## System link
 
@@ -690,6 +731,36 @@ Only machines with the invite can find the game:
   Refer to `NETCODE.md`. `kick <player name>` drops the player the same
   way, but keeps nothing: no line in `bans.txt`, and the player can join
   again at once. In co-op, `bringto` brings every player to the host.
+- Players can vote to kick a player (`network.votekick`). Hold the
+  scoreboard key, right-click to show the pointer, and click the name of
+  the player. Then click **Start a vote to kick**. Other players vote in
+  the same way, and see the vote on the scoreboard. `votekick <player
+  name>` in the developer console does the same. The host also gets
+  **Kick** and **Ban** in this menu: these do the same as the `kick` and
+  `ban` commands (click **Ban** two times). The host counts the votes, and
+  these rules prevent abuse:
+  - The vote passes when more than half of the players vote for it, and at
+    least two players. The player of the vote is counted, but cannot vote.
+    Thus, in a game of two equal teams, one team cannot kick a player of
+    the other team without help.
+  - The host counts one vote for each internet address (for internet
+    play, the real address of the player, not the address of the tunnel).
+    Two machines at one address, or with one hardware id, have one vote.
+  - To start a vote, a player must have played for
+    `network.votekick_minutes` (5) on this server. To vote, a player must
+    have played for 2 minutes (or less, if that setting is less). The host
+    counts the time. When a player joins again, the time starts again.
+    Players who cannot vote yet are not counted.
+  - The host only accepts a vote that comes on the connection of the
+    player, not a datagram, which another machine can send with the
+    address of the player.
+  - One vote runs at a time, for 45 seconds, with 30 seconds before the
+    next vote. If a vote fails, the player who started it cannot start a
+    vote for 5 minutes, and nobody can start a vote against the same player
+    for 10 minutes.
+  - Nobody can vote to kick a player of the host.
+  - A player kicked by a vote cannot join again for
+    `network.votekick_ban_minutes` (30), by address and hardware id.
   So that every player can be named, the host trims the spaces around a
   name and removes characters that draw as nothing. A
   letter with a mark is typed as the plain letter (`ban jose` for "José").
@@ -855,9 +926,10 @@ crafted file) is refused, and the level starts over.
 | --- | --- |
 | Game code | All 466 C files of the game. The changes are in "Game source changes". |
 | Graphics | Direct3D 8 on OpenGL 4.5 core through SDL3 (`src/d3d8_gl.c`). The port translates the NV2A vertex shaders and register combiners to GLSL. It decodes all the Xbox texture formats. The vertex and index buffers come from a GL copy of the Xbox memory. |
-| High-res HUD | The HUD is drawn from high-res assets: redraws at 8x the size of the maps' bitmaps (4x for the largest), in `port/assets/hud`. They cover the meters, counters, panels and their outlines, the motion sensor, reticles, waypoints and scopes, but no bitmap with English text. `tools/hud_assets.py` makes them from the SVG redraws, and the build embeds them in the executable. When the game uploads one of those bitmaps, `src/hud_hires.c` gives the high-res texture in its place, if the bitmap's pixels are those of the English maps: another language's maps keep their own. The game sizes and places the HUD from its tags as before. `display.high_res_hud = false` turns this off. |
-| High-res text | The menus' and HUD's text is drawn with Overpass (`port/assets/fonts`, SIL Open Font License) in place of the maps' bitmap fonts, which are Interstate. `src/text_hires.c` rasterizes each glyph with stb_truetype (`port/third_party/stb`) at the resolution the game draws at, into an atlas that a placeholder bitmap of the game stands for. The game lays the text out from its font tags as before. The menus' titles (the screens' headers and the main menu's items) are pictures of text in the maps, so they are drawn as the high-res HUD is: `tools/title_assets.py` sets each one again in OpenCE, Roger White's public-domain Newtown respaced to match the maps' commercial title typeface (`tools/title_font.py`), at 4x the bitmap's size over its own plate or glow, each letter placed where the map's letter is, in `port/assets/titles`. The postgame carnage report's title is set over a hand-made SVG redraw of its panel (`port/assets/titles/svg`) instead. `display.high_res_text = false` turns it off. |
+| High-res HUD | The HUD is drawn from high-res assets: redraws at 8x the size of the maps' bitmaps (4x for the largest), in `port/assets/hud`. They cover the meters, counters, panels and their outlines, the motion sensor, reticles, waypoints and scopes, but no bitmap with English text. `tools/hud_assets.py` makes them from the SVG redraws, including the weapons' reticles matched to the PC HUD sheet and the sniper rifle's 2x and 10x set in Overpass. The build embeds them in the executable. When the game uploads one of those bitmaps, `src/hud_hires.c` gives the high-res texture in its place, if the bitmap's pixels are those of the English maps: another language's maps keep their own. The game sizes and places the HUD from its tags as before. `display.high_res_hud = false` turns this off. |
+| High-res text and controller buttons | The menus' and HUD's text is drawn with Overpass (`port/assets/fonts`, SIL Open Font License) in place of the maps' bitmap fonts, which are Interstate. `src/text_hires.c` rasterizes each glyph with stb_truetype (`port/third_party/stb`) at the resolution the game draws at, into an atlas that a placeholder bitmap stands for. The menus' titles are high-res pictures in `port/assets/titles`; the A/B/X/Y button icons are in the separate `port/assets/buttons` manifest and replace only their named sprite sequences, leaving the rest of a shared bitmap intact. `display.high_res_text = false` turns both off. |
 | Anti-aliasing | Off unless `display.anti_aliasing` is set (`src/d3d8_gl.c`, `src/xgpu_post.c`). FXAA (written in the port) and SMAA (`port/third_party/smaa`, MIT licensed, at its HIGH preset, compiled as GLSL) are passes over the 3D view of each window, after the lens flares and before the HUD and the menus (`render/render.c`). Their programs are built when the setting is chosen. Supersampling draws the render targets the size of the screen at two times the resolution in each direction, and the display blit scales them down. Multisampling draws the back buffer and its depth buffer into multisampled renderbuffers, and with them any target that is drawn together with one of them (a mirror's view, in the secondary target with the back buffer's depth buffer), so that the attachments of a framebuffer are all multisampled or none is. A target's pixels are resolved into its texture before something reads the texture (as a texture, or at the display blit). Visibility tests count samples, divided by the samples of a pixel. An alpha-tested surface (foliage, grates) covers the samples of a pixel in proportion to its alpha past the reference (`gl_SampleMask`, not on Android). |
+
 | Sound | Xbox DirectSound on SDL3 audio (`src/dsound_sdl.c`): PCM and Xbox ADPCM, mixed at 48 kHz, with volume, pitch, mix bins, distance, stereo pan, occlusion and obstruction. There is no Doppler effect, no cones and no reverb. |
 | Input | XInput on SDL3 (`src/xinput_sdl.c`): keyboard, mouse, gamepads with rumble, and the debug keyboard for the console. |
 | Files | The Win32 file functions and the MSVC file functions on POSIX, with the translation of Xbox paths. |
@@ -912,6 +984,16 @@ definition. Without this check, the linker gives the reference the address
   `d3d_find_flipcount`.
 - The build returns small structures and unions in registers
   (`-freg-struct-return`), as on Win32.
+- The GPU driver cannot open the kernel's `trace_marker`
+  (`src/posix_trace_marker.c`). SteamOS keeps kernel tracing on for its GPU
+  performance captures (`gpu-trace.service`), and its Mesa then writes a
+  marker for each traced driver function: on the Steam Frame, some 480,000
+  writes a second, which took the game from the headset's 72 Hz to about
+  50 frames a second. The Steam Deck runs the same service, but its Mesa
+  (25.3, 32-bit and 64-bit) has no markers to write: there the refusal
+  changes nothing (measured: the same frame times and power either way).
+  `HALO_GPU_TRACE_MARKERS=1` lets the driver write them, to capture with
+  gpuvis.
 
 ### Game source changes
 

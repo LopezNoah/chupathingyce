@@ -30,10 +30,11 @@ SCREENS = {
     "video_settings": {
         "screen": "video_settings_screen",
         "header": ("header_profile_video_settings", f"{PE}/video_settings/header_profile_video_settings"),
-        # (closer than the other screens' rows, and the help lower, for all
-        # twelve places to fit above it)
-        "spacing": 24,
+        # the other screens' 30px step. each platform packs its own rows, so
+        # a row hidden on this machine does not leave a gap
+        "spacing": 30,
         "help_top": 364,
+        "platform_places": True,
         # (rows in the place of the row before them: Window Size in
         # Resolution's, port/linux/game/menu_functions.c showing the one the
         # display mode chosen uses; Android's anti-aliasing in the desktop's)
@@ -164,6 +165,34 @@ SCREENS = {
     },
 }
 
+# Video Setup's categories open ordinary settings screens. Each has the same
+# pending edits, Defaults, OK and Cancel as the other settings screens.
+_video = SCREENS["video_settings"]
+_graphics = {"display.high_res_hud", "display.high_res_text", "display.anti_aliasing",
+             "display.shadow_resolution", "display.per_pixel_lighting"}
+SCREENS["video_settings/graphics"] = {
+    "screen": "graphics_settings_screen", "header": _video["header"], "spacing": 30,
+    "same_place": ["anti_aliasing_android"],
+    "rows": [row for row in _video["rows"] if row[1] in _graphics],
+}
+_video["rows"] = [row for row in _video["rows"] if row[1] not in _graphics]
+_video["categories"] = [
+    ("GRAPHICS:", "video_settings/graphics", "The HUD, text, anti-aliasing, shadows and\nlighting."),
+    ("FOV AND VIEWMODELS:", "video_settings/fov_viewmodels",
+     "The field of view and the first-person\nweapon. Their defaults keep the stock view."),
+]
+SCREENS["video_settings/fov_viewmodels"] = {
+    "screen": "fov_viewmodel_settings_screen", "header": _video["header"], "spacing": 30,
+    "rows": [
+        ("FOV:", "display.fov", [("DEFAULT", "0")] + [(str(n), str(n)) for n in range(80, 151, 5)],
+         "On foot, horizontal at 16:9, in degrees.\nDefault keeps the stock view.", None),
+        ("VIEWMODEL FOV:", "display.viewmodel_fov", [("DEFAULT", "0")] + [(str(n), str(n)) for n in range(80, 151, 5)],
+         "The weapon and hands, horizontal at 16:9.\nDefault keeps the weapon's stock view.", None),
+        ("VIEWMODELS:", "display.viewmodel_visible", ON_OFF,
+         "Draw first-person weapons, hands and attached\nvisuals. Gameplay and sound continue when off.", None),
+    ],
+}
+
 # Controls Setup: the keyboard and mouse's actions, in groups (the order of
 # port/linux/game/menu_functions.c's table of them)
 CONTROL_GROUPS = ["MOVEMENT", "WEAPONS", "ACTIONS"]
@@ -247,12 +276,23 @@ def _setting_screen(folder: str, spec: dict) -> list:
     base = f"{PE}/{folder}"
     rows, extra = [], []
     place = -1
+    places = {"desktop": -1, "android": -1}
     for index, (label, setting, choices, _, platform, *named) in enumerate(spec["rows"]):
         key = named[0] if named else setting.split(".", 1)[1]
         row = f"{base}/op_{key}"
-        if setting not in spec.get("same_place", ()) and key not in spec.get("same_place", ()):
-            place += 1
-        rows.append((row, platform, place))
+        shares = setting in spec.get("same_place", ()) or key in spec.get("same_place", ())
+        if spec.get("platform_places"):
+            for name in places:
+                if platform in (None, name) and not shares:
+                    places[name] += 1
+            if platform or places["desktop"] == places["android"]:
+                rows.append((row, platform, places[platform or "desktop"]))
+            else:
+                rows += [(row, name, places[name]) for name in places]
+        else:
+            if not shares:
+                place += 1
+            rows.append((row, platform, place))
         extra += _widget(row, [("width", 512), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
                                ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF"), ("platform", platform)],
                          [f'<child{attributes([("widget", f"{base}/{key}_label")])}/>',
@@ -270,14 +310,38 @@ def _setting_screen(folder: str, spec: dict) -> list:
                           ("header_bitmap", "bitmaps/arrow_sm_left"), ("footer_bitmap", "bitmaps/arrow_sm_right"),
                           ("header_bounds", "7 -6 19 0"), ("footer_bounds", "7 150 19 156")],
                          ['<on event="created" run="port setting load"/>'])
+    for index, (label, category_folder, _) in enumerate(spec.get("categories", ())):
+        key = category_folder.rsplit("/", 1)[-1]
+        row = f"{base}/op_{key}"
+        target = f"{PE}/{category_folder}/{SCREENS[category_folder]['screen']}"
+        if spec.get("platform_places"):
+            for name in places:
+                places[name] += 1
+            if places["desktop"] == places["android"]:
+                rows.append((row, None, places["desktop"]))
+            else:
+                rows += [(row, name, places[name]) for name in ("desktop", "android")]
+        else:
+            rows.append((row, None, place + 1 + index))
+        extra += _widget(row, [("width", 512), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
+                               ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                         [f'<on event="a" open="{target}"/>', f'<on event="start" open="{target}"/>',
+                          '<on event="left_mouse" run="mouse emit accept event"/>',
+                          f'<child widget="{base}/{key}_label"/>'])
+        extra += _widget(f"{base}/{key}_label",
+                         [("type", "text"), ("controller", 1), ("width", 512), ("height", 22),
+                          ("string_list", f"{base}/labels"), ("string_index", len(spec["rows"]) + index),
+                          ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
     extra += _button(f"{base}/button_defaults", 3, ['<on event="a" run="port settings defaults"/>',
                                                     '<on event="start" run="port settings defaults"/>'])
     extra += _button(f"{base}/button_ok", 1, ['<on event="a" run="port settings save" back="true"/>',
                                               '<on event="start" run="port settings save" back="true"/>'])
-    extra += _strings(f"{base}/labels", [label for label, *_ in spec["rows"]])
+    extra += _strings(f"{base}/labels", [label for label, *_ in spec["rows"]] +
+                      [label for label, *_ in spec.get("categories", ())])
     # (the help of the row whose label is string n is n + 1: the buttons' is 0)
     extra += _strings(f"{base}/help_strings",
-                      [""] + [help_text.replace("\n", "\\n") for _, _, _, help_text, *_ in spec["rows"]])
+                      [""] + [help_text.replace("\n", "\\n") for _, _, _, help_text, *_ in spec["rows"]] +
+                      [help_text.replace("\n", "\\n") for _, _, help_text in spec.get("categories", ())])
     return _screen(folder, spec, rows, ["port settings help"], [], extra)
 
 
@@ -360,7 +424,12 @@ MT = "main_menu/multiplayer_type_select"
 # and their helps after the five of its own (its helps are the rows' values'
 # in turn: menu_functions.c's gametype_option_help)
 SLAYER_EDIT = "main_menu/settings_select/multiplayer_setup/playlist_edit/slayer_edit"
+TEAMPLAY_EDIT = "main_menu/settings_select/multiplayer_setup/teamplay_options_edit"
 STRING_INSERTS = {
+    f"{TEAMPLAY_EDIT}/cap_teamplay_options": [(10, [
+        "Players can vote to kick a player, from the\\nscoreboard.",
+        "Players cannot vote to kick anyone.",
+    ])],
     f"{SLAYER_EDIT}/var_kills_to_win": [(5, ["75", "100", "150", "200", "250", "500"])],
     f"{SLAYER_EDIT}/cap_slayer": [(11, [
         "Seventy-five kills to win. Settle in for a long\\nfight.",
@@ -447,6 +516,11 @@ WIDGET_PATCHES = {
     # button settings, BITMAP_FRAMES; menu_functions.c's
     # profile_gamepad_layout)
     f"{PE}/profile_edit_extended_desc_pic": {"inputs": ["port gamepad layout preview"]},
+    # (the host's optional vote-kick setting, after Teamplay Options' own rows)
+    f"{TEAMPLAY_EDIT}/teamplay_options_menu": {"insert_before": {
+        f"{TEAMPLAY_EDIT}/teamplay_button_bar": [
+            f'<child widget="{TEAMPLAY_EDIT}/op_votekick" x="54" y="163"/>',
+        ]}},
     # (straight to their screens: no "checking for updates" dialog, which
     # asked the PC version's servers)
     f"{MT}/multiplayer_type_join_internet_item": {"set": {"string_index": 6}, "handlers": [
@@ -1157,12 +1231,39 @@ def _map_kind() -> list:
     return lines
 
 
+def _teamplay_votekick_extra() -> list:
+    """Server Setup's optional vote-kick toggle on Teamplay Options."""
+    base = f"{TEAMPLAY_EDIT}/votekick"
+    lines = _widget(f"{TEAMPLAY_EDIT}/op_votekick", [("width", 512), ("height", 28),
+                                                       ("flags", "pass_unhandled_to_focused_child"),
+                                                       ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                    [f'<child widget="{base}_label"/>', f'<child widget="{base}_spinner" x="320" y="1"/>'])
+    lines += _widget(f"{base}_label", [("type", "text"), ("controller", 1), ("width", 300), ("height", 22),
+                                        ("text", "VOTE KICK:"), ("font", "ui\\large_ui"),
+                                        ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
+    lines += _widget(f"{base}_spinner", [("type", "spinner"), ("left", 2), ("top", 2), ("width", 148),
+                                          ("height", 20),
+                                          ("flags", "pass_unhandled_to_focused_child left_right_tabs_items"),
+                                          ("strings", "ON|OFF"), ("setting", "network.votekick"),
+                                          ("values", "true|false"), ("font", "ui\\large_ui"),
+                                          ("color", "#FF2896FF"), ("align", "center"), ("text_y", 4),
+                                          ("list_flags", "items_from_strings"),
+                                          ("header_bitmap", "bitmaps/arrow_sm_left"),
+                                          ("footer_bitmap", "bitmaps/arrow_sm_right"),
+                                          ("header_bounds", "7 -6 19 0"), ("footer_bounds", "7 150 19 156")],
+                     ['<on event="created" run="port setting load"/>',
+                      '<on event="deleted" run="port setting save"/>',
+                      '<on event="left_mouse" run="mouse spinner 1wide click"/>'])
+    return lines
+
+
 def multiplayer_files() -> dict:
     """the port's multiplayer widgets: the browser's additions, the server
     settings, the lobby"""
     head = ['<?xml version="1.0" encoding="UTF-8"?>',
             "<!-- The port's multiplayer screens, in the PC version's style (tools/port_settings.py) -->", "<menus>"]
     return {
+        f"{TEAMPLAY_EDIT}".replace("/", ".") + ".port.xml": head + _teamplay_votekick_extra() + ["</menus>", ""],
         f"{MT}/join_game".replace("/", ".") + ".port.xml": head + _join_game_extras() + ["</menus>", ""],
         f"{MT}/server_settings".replace("/", ".") + ".xml": head + _server_settings() + ["</menus>", ""],
         f"{MT}/lobby".replace("/", ".") + ".xml": head + _lobby() + ["</menus>", ""],
@@ -1173,3 +1274,92 @@ def multiplayer_files() -> dict:
 
 
 REPLACED_FOLDERS = [f"{MT}/server_settings"]
+
+
+# ---------- in a game: SETTINGS in the pause menus
+
+# The game's pause menus are the maps' own, not these files', and ui.map has
+# none of their art, so these widgets (in_game/...) are built in the game's
+# maps instead, with the screens they open (port/linux/game/menu_tags.c);
+# ui_widget.c adds SETTINGS to the pause menus after RESUME GAME. Its screen
+# is the multiplayer pause menu's box and key, from the maps' own tags (every
+# campaign and multiplayer map has them), with rows as the pause menus have
+# them, named and ordered as Edit Profile has them. Each opens Edit Profile's
+# screen over the pause menu's dim (behind them, the main menu has its dark
+# backdrop, a game the game), and the screen saves config.toml's settings as
+# it does there; GAMEPADS, on OK, only the controller settings of the
+# player's active profile ("port active profile edit begin" and "end",
+# port/linux/game/menu_functions.c).
+# The desktop builds' only, for now.
+IG = "in_game"
+PAUSE_DIM = "ui\\shell\\bitmaps\\semi_transparent_grey"
+PAUSE_ROW = [("type", "text"), ("width", 202), ("height", 27), ("bitmap", "ui\\shell\\bitmaps\\menu_bkds"),
+             ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("align", "center"), ("text_y", 3)]
+DESKTOP = [("platform", "desktop")]
+# Edit Profile's setups: their rows' names (its profile_edit_options), and
+# the screens they open
+IN_GAME_SETUPS = [("controls_setup", 1, f"{PE}/controls_setup/controls_settings_screen"),
+                  ("gamepads", 2, f"{PE}/gamepad_setup/gamepad_setup_screen"),
+                  ("mouse_setup", 3, f"{PE}/mouse_settings/mouse_settings_screen"),
+                  ("audio_setup", 4, f"{PE}/audio_settings/audio_settings_screen"),
+                  ("video_setup", 5, f"{PE}/video_settings/video_settings_screen")]
+# the box where the multiplayer pause menu has it; the body of its art
+# (pausebox2_*) between its rows 2 and 130, the key's band below; the rows
+# that far inside it (ui_widget.c's UI_PAUSE_BOX_ROWS_MARGIN), spaced as the
+# multiplayer pause menu's at most
+BOX_Y, BOX_BODY_TOP, BOX_BODY_BOTTOM, ROWS_MARGIN, ROW_HEIGHT, ROW_SPACING = 164, 2, 130, 4, 27, 35
+
+
+def _pause_row(name: str, label: list, handlers: list) -> list:
+    return _widget(name, label + PAUSE_ROW + DESKTOP, handlers)
+
+
+def _opens(screen: str, run: str = None) -> list:
+    action = (f'run="{run}" ' if run else "") + f'open="{screen}"'
+    return [f'<on event="a" {action}/>', f'<on event="start" {action}/>']
+
+
+def _rows_place(count: int) -> tuple:
+    """the rows' top and spacing: in the middle of the box's body"""
+    body = BOX_BODY_BOTTOM - BOX_BODY_TOP
+    spacing = min(ROW_SPACING, (body - 2 * ROWS_MARGIN - ROW_HEIGHT) // (count - 1))
+    span = (count - 1) * spacing + ROW_HEIGHT
+    return BOX_Y + BOX_BODY_TOP + (body - span) // 2, spacing
+
+
+def in_game_files() -> dict:
+    """SETTINGS in the pause menus, its screen, and the setups' screens"""
+    top, spacing = _rows_place(len(IN_GAME_SETUPS))
+    lines = _pause_row(f"{IG}/settings_button", [("text", "SETTINGS")], _opens(f"{IG}/settings_screen"))
+    lines += _widget(f"{IG}/settings_screen",
+                     [("width", 640), ("height", 480), ("flags", "pass_unhandled_to_focused_child pause_game"),
+                      ("bitmap", PAUSE_DIM)] + DESKTOP,
+                     ['<on event="b" back="true"/>', '<on event="back" back="true"/>',
+                      f'<child widget="{IG}/settings_box" x="210" y="{BOX_Y}"/>',
+                      f'<child widget="{IG}/settings_list" x="218" y="{top}"/>',
+                      '<child widget="ui\\shell\\main_menu\\button_key_sm" x="235" y="298"/>'])
+    lines += _widget(f"{IG}/settings_box", [("width", 226), ("height", 154)] + DESKTOP,
+                     ['<child widget="ui\\shell\\solo_game\\pause_game\\pausebox2_left" x="-4"/>',
+                      '<child widget="ui\\shell\\solo_game\\pause_game\\pausebox2_left_center" x="12"/>',
+                      '<child widget="ui\\shell\\solo_game\\pause_game\\pausebox2_right" x="206"/>'])
+    lines += _widget(f"{IG}/settings_list",
+                     [("type", "column_list"), ("width", 202),
+                      ("height", (len(IN_GAME_SETUPS) - 1) * spacing + ROW_HEIGHT),
+                      ("flags", "pass_unhandled_to_focused_child up_down_tabs_items")] + DESKTOP,
+                     [f'<child widget="{IG}/{key}_button" y="{index * spacing}"/>'
+                      for index, (key, _, _) in enumerate(IN_GAME_SETUPS)])
+    for key, string_index, screen in IN_GAME_SETUPS:
+        # (GAMEPADS sets the profile's controller settings: the player's
+        # active profile, being edited while its screen is up)
+        gamepads = key == "gamepads"
+        lines += _pause_row(f"{IG}/{key}_button",
+                            [("string_list", f"{PE}/profile_edit_options"), ("string_index", string_index)],
+                            _opens(f"{IG}/{key}_screen", "port active profile edit begin" if gamepads else None))
+        lines += _widget(f"{IG}/{key}_screen",
+                         [("width", 640), ("height", 480), ("flags", "pass_unhandled_to_focused_child"),
+                          ("bitmap", PAUSE_DIM)] + DESKTOP,
+                         (['<on event="deleted" run="port active profile edit end"/>'] if gamepads else []) +
+                         [f'<child widget="{screen}"/>'])
+    return {"in_game.xml": ['<?xml version="1.0" encoding="UTF-8"?>',
+                            "<!-- The port's SETTINGS in the game's pause menus (tools/port_settings.py) -->",
+                            "<menus>", *lines, "</menus>", ""]}

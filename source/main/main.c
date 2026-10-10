@@ -397,6 +397,7 @@ symbols in this file:
 #include "text/draw_string.h"
 #include "text/font_group.h"
 #include "tag_files/files.h"
+#include "view_fov.h" /* port: display.fov, before the projection and culling */
 #ifdef HALO_64BIT
 #include "input/input_abstraction.h"
 #include "interface/player_ui.h"
@@ -1157,11 +1158,12 @@ void set_window_camera_values(
 		window->rasterizer_camera.position = observer->position;
 		window->rasterizer_camera.forward = observer->forward;
 		window->rasterizer_camera.up = observer->up;
+		/* port: display.fov's view, the local render view only (view_fov.c) */
 		window->rasterizer_camera.vertical_field_of_view =
-			2.0f * arctangent(
+			render_fov_vertical(window->local_player_index, 2.0f * arctangent(
 				0.75f * render_camera_get_adjusted_field_of_view_tangent(
 					observer->field_of_view),
-				1.0f);
+				1.0f));
 
 		if (window->local_player_index != NONE &&
 			!console_is_active() &&
@@ -2628,7 +2630,6 @@ void main_rasterizer_throttle(
 	unsigned long start_milliseconds;
 	short lapsed_frames;
 	boolean did_throttle;
-	boolean precache_in_progress;
 	boolean synchronized;
 	char const *description;
 
@@ -2643,15 +2644,17 @@ void main_rasterizer_throttle(
 		if ((__int64)rasterizer_globals.frame_and_vertical_blank_index < target_index)
 		{
 			start_milliseconds = system_milliseconds();
-			precache_in_progress = cache_files_precache_in_progress();
 			did_throttle = TRUE;
 			profile_idle_start();
 			while ((__int64)rasterizer_globals.frame_and_vertical_blank_index < target_index)
 			{
-				if (precache_in_progress)
-				{
-					Sleep(1);
-				}
+				/* port: a sleep between looks, not only while a map
+				precaches: the Xbox spun here, which on a port holds a core
+				busy for most of each frame of a game held at 30 frames a
+				second (display.interpolation off). A millisecond is well
+				inside a 33 ms frame (Windows sets its timer to 1 ms:
+				win32_posix.c) */
+				Sleep(1);
 				if (system_milliseconds() > start_milliseconds + 1000)
 				{
 					console_warning(
@@ -3401,7 +3404,11 @@ void main_loop(
 #endif
 			bink_playback_update();
 
-			if ((!game_in_editor() && (input_key_is_down(_key_end) || input_key_is_down(_key_escape))) || editor_should_exit())
+			/* port: not the Xbox debug keyboard's End and Escape, which stop
+			the movie and restart the map: this keyboard reaches the game only
+			through the console and the menus' text boxes, whose End and Escape
+			they are (port/linux/src/xinput_sdl.c) */
+			if (editor_should_exit())
 			{
 				main_movie_stop();
 

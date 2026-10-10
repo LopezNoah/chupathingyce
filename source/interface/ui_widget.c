@@ -1393,6 +1393,14 @@ static boolean ui_widget_load_children_recursive(
 /* port: whether the tag is one of the menus' (port/linux/game/menu_tags.c) */
 boolean pc_menu_tag(
 	long tag_index);
+/* port: whether this machine has, or is adding, a second player: co-op,
+split screen, the lobby's (port/linux/game/menu_functions.c) */
+unsigned char pc_menu_split_players(
+	void);
+/* port: local_player_count, 0 before the players' globals are made
+(source/game/players.c) */
+short players_port_local_player_count(
+	void);
 /* port: where in its widget, and how large, the menus draw a frame of
 ui.map's that they scale (port/linux/game/menu_tags.c) */
 boolean pc_menu_frame_placement(
@@ -1401,6 +1409,11 @@ boolean pc_menu_frame_placement(
 	short *y,
 	short *width,
 	short *height);
+/* port: the placeholder bitmap the menus draw a sprite of a high-res
+texture from, or the sheet if it has none (port/linux/game/hud_hires_tags.c) */
+struct bitmap_data const *hud_hires_sprite_bitmap(
+	struct bitmap_data const *sheet,
+	short sequence_index);
 static void widget_instance_initialize(
 	struct widget_instance *widget,
 	struct widget_instance *parent,
@@ -1469,8 +1482,9 @@ static wchar_t *spinner_string_list_get_string(
 /* ---------- globals */
 
 /* port: text boxes' string list indices from here are the descriptions of
-spinners' extra items (kills_to_win_extra_descriptions) */
-#define SPINNER_EXTRA_DESCRIPTION_BASE 0x5000
+spinners' extra items (kills_to_win_extra_descriptions), above the Custom
+Edition maps' display indices (custom_edition_maps.c keeps them below 0x7000) */
+#define SPINNER_EXTRA_DESCRIPTION_BASE 0x7000
 /* ... and the pixels a spinner with extra items is wider (for three digits) */
 #define SPINNER_EXTRA_WIDTH 12
 
@@ -3967,6 +3981,13 @@ static void widget_instance_initialize(
 	screen, which would) */
 	widget->pause_game_time = TEST_FLAG(definition->flags, _widget_pause_game_time_bit) &&
 		!network_coop_active();
+	/* Port settings screens do not pause any active network game; co-op has
+	its own pause behavior above, while other network modes also keep running. */
+	if (widget->pause_game_time && pc_menu_tag(tag_index) &&
+		!we_are_at_the_main_menu && network_game_is_active())
+	{
+		widget->pause_game_time = FALSE;
+	}
 	widget->creation_time = widget_globals.current_system_milliseconds;
 	widget->milliseconds_to_auto_close = MAX(definition->milliseconds_to_auto_close, 0);
 	widget->auto_close_fade_time = MAX(definition->auto_close_fade_time, 0);
@@ -4271,6 +4292,8 @@ static void render_state_bitmap(
 	if (bitmap && _texture_cache_bitmap_get_hardware_format(
 		(struct bitmap_data *)bitmap, FALSE, TRUE))
 	{
+		/* port: the sprite from a high-res texture, if it has one */
+		bitmap = hud_hires_sprite_bitmap(bitmap, icon->sequence_index);
 		scale = hud_globals_get_scale(local_player_count() > 1);
 		point.x = (short)(icon->offset.x * scale + cursor_bounds->x0 + 1.0f);
 		point.y = (short)(cursor_bounds->y1 - icon->offset.y * scale - 2.0f);
@@ -7594,10 +7617,14 @@ void render_ui_widgets(
 		{
 			/* fit the legends while the rows are still targets (merging
 			removes them); widen after merging (the merged values are
-			row-tall) */
+			row-tall). A finger's targets only: the mouse clicks the
+			labels and values where CE's menus have them */
 			ui_mouse_fit_button_targets();
-			ui_mouse_merge_setting_rows();
-			ui_mouse_widen_values();
+			if (ui_mouse_pointer_is_touch)
+			{
+				ui_mouse_merge_setting_rows();
+				ui_mouse_widen_values();
+			}
 			ui_mouse_targets_settled = TRUE;
 		}
 		if (widget_globals.fade_to_black >= 0.0f &&
@@ -7856,6 +7883,27 @@ static void widget_instance_tab_to_previous_valid_widget(
 	return;
 }
 
+/* port: with one person playing, any controller drives the first player's
+menus, not only the first port's: a phone can list a device of its own (its
+touch controls) before the gamepad, which then reads port 2, and a player
+picks up whichever pad is at hand. Its screens read every controller's
+events (process_ui_widgets), and take them
+(widget_takes_events_of_controller). With two or more players, each
+controller keeps to its own player's menus */
+static boolean widget_takes_any_controller(
+	struct widget_instance const *widget)
+{
+	return widget->local_player_index == 0 && !pc_menu_split_players() &&
+		(we_are_at_the_main_menu || players_port_local_player_count() <= 1);
+}
+
+/* port: the controller whose events a screen reads (NONE: every one's) */
+static short widget_event_controller(
+	struct widget_instance const *widget)
+{
+	return widget_takes_any_controller(widget) ? NONE : widget->local_player_index;
+}
+
 /* port: whether a widget of the local player (NONE: any) takes the
 controller's events. In co-op's menus (Multiplayer's CO-OP CAMPAIGN,
 port/linux/game/menu_functions.c) the screens it shares with one player's
@@ -7870,6 +7918,11 @@ static boolean widget_takes_events_of_controller(
 
 	if (widget->local_player_index == NONE || widget->local_player_index == controller_index)
 		return TRUE;
+	if (controller_index > 0 && controller_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS &&
+		widget_takes_any_controller(widget))
+	{
+		return TRUE;
+	}
 	if (widget->local_player_index != 0 || !we_are_at_the_main_menu || player_spawn_count < 2 ||
 		controller_index < 0 || controller_index >= MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
 	{
@@ -8761,7 +8814,7 @@ void process_ui_widgets(
 			struct event_record event = {0};
 
 			if (widget_globals.processing_inhibited ||
-				!get_next_event(&event, widget->local_player_index))
+				!get_next_event(&event, widget_event_controller(widget)))
 			{
 				/* the widget still gets one empty event so that its animation,
 				auto-close timer and fade keep running */
@@ -8792,7 +8845,7 @@ void process_ui_widgets(
 					if (widget != widget_globals.active_widgets[widget_index])
 						break;
 				}
-				while (get_next_event(&event, widget->local_player_index));
+				while (get_next_event(&event, widget_event_controller(widget)));
 			}
 			widgets_processed = TRUE;
 			if (!widget_globals.active_widgets[widget_index] &&

@@ -64,8 +64,8 @@ looks for a new version and offers its download page) */
 #define HALO_BUILD_FLAVOR "release"
 #endif
 
-/* ChupathingyCE's releases */
-#define UPDATE_REPOSITORY "ChupathingyCE/chupathingyce"
+/* the releases of this fork (LopezNoah/chupathingyce), not ChupathingyCE's */
+#define UPDATE_REPOSITORY "LopezNoah/chupathingyce"
 #if defined(_WIN32) && defined(HALO_64BIT)
 /* (the 64-bit Windows build's own download, ninja windows64: tools/ci_build.py) */
 #define UPDATE_PLATFORM "windows64"

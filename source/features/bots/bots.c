@@ -98,7 +98,6 @@ enum
 	game another machine is in, so these never meet a real machine. */
 	BOT_MACHINE_INDEX = HALO_PORT_MAXIMUM_NETWORK_MACHINES - 1,
 	BOT_MACHINE_COUNT = (BOTS_MAXIMUM + MAXIMUM_LOCAL_PLAYERS - 1) / MAXIMUM_LOCAL_PLAYERS,
-	BOT_JOIN_DELAY_TICKS = TICKS_PER_SECOND,
 	BOT_PROGRESS_CHECK_TICKS = TICKS_PER_SECOND,
 	BOT_NAV_NEIGHBORS = 6,
 	BOT_NAV_EXPANSIONS_PER_TICK = 64,
@@ -307,7 +306,6 @@ static struct
 	short desired_count;
 	struct bot_skill const *skill;
 	uint64_t epoch;
-	long last_join_time;
 	struct bot bots[BOTS_MAXIMUM];
 	struct bot_navigation navigation;
 } bots_globals;
@@ -317,6 +315,7 @@ static struct
 static boolean bots_host_may_have_bots(void);
 static void bots_refresh(void);
 static void bots_join(void);
+static boolean bot_join(struct bot *bot, short bot_index);
 static void bot_leave(struct bot *bot);
 static void bot_think(struct bot *bot);
 
@@ -333,7 +332,6 @@ void bots_initialize_for_new_map(
 	csmemset(&bots_globals.navigation, 0, sizeof(bots_globals.navigation));
 	bots_globals.had_bots = FALSE;
 	bots_globals.sandbox_done = FALSE;
-	bots_globals.last_join_time = NONE;
 	bots_globals.epoch++;
 	bots_globals.desired_count = (short)PIN(count, 0, BOTS_MAXIMUM);
 	bots_globals.skill = &bot_skills[1];
@@ -2315,37 +2313,40 @@ static char bots_choose_team(
 	return counts[1] < counts[0] ? 1 : 0;
 }
 
-/* one bot a second, until there are as many as configured */
+/* every bot missing, at once, until there are as many as configured: a new
+game's bots join in its first tick and spawn with its players */
 static void bots_join(
 	void)
 {
-	long now = game_time_get();
 	short active_count = 0;
 	short bot_index;
-	struct bot *bot = NULL;
-	struct network_player network_player;
-	long player_index;
-	char name[12];
-	short character;
-	long machine_index;
 
 	for (bot_index = 0; bot_index < BOTS_MAXIMUM; bot_index++)
 	{
 		if (bots_globals.bots[bot_index].active)
 			active_count++;
-		else if (!bot)
-			bot = &bots_globals.bots[bot_index];
 	}
-	if (!bot || active_count >= bots_globals.desired_count || now < BOT_JOIN_DELAY_TICKS ||
-		(bots_globals.last_join_time != NONE && now - bots_globals.last_join_time < BOT_JOIN_DELAY_TICKS))
+	for (bot_index = 0; bot_index < BOTS_MAXIMUM && active_count < bots_globals.desired_count; bot_index++)
 	{
-		return;
+		if (!bots_globals.bots[bot_index].active && bot_join(&bots_globals.bots[bot_index], bot_index))
+			active_count++;
 	}
-	bots_globals.last_join_time = now;
-	bot_index = (short)(bot - bots_globals.bots);
-	machine_index = bot_machine_index(bot_index);
+}
+
+/* the bot in the slot joins as a player; FALSE if there is no room for it */
+static boolean bot_join(
+	struct bot *bot,
+	short bot_index)
+{
+	long now = game_time_get();
+	struct network_player network_player;
+	long player_index;
+	char name[12];
+	short character;
+	long machine_index = bot_machine_index(bot_index);
+
 	if (bots_free_machine_slots(machine_index) == 0)
-		return;
+		return FALSE;
 
 	csmemset(&network_player, 0, sizeof(network_player));
 	csmemset(name, 0, sizeof(name));
@@ -2367,7 +2368,7 @@ static void bots_join(
 
 	player_index = player_new(machine_index, NONE, NONE, &network_player);
 	if (player_index == NONE)
-		return;
+		return FALSE;
 	/* (as a player who joins a game in progress:
 	network_game_client_add_player_to_game) */
 	game_engine_player_added(player_index);
@@ -2385,7 +2386,8 @@ static void bots_join(
 	engine_ai_rng32_seed(&bot->rng, bots_globals.epoch * 7919u + (uint64_t)now, (uint64_t)bot_index);
 	engine_ai_behavior_begin(&bot->behavior, &bot_behavior);
 	bots_globals.had_bots = TRUE;
-	platform_log("bots: %s joined (%s)", name, bots_globals.skill->name);
+	platform_log("bots: %s joined (%s) at tick %ld", name, bots_globals.skill->name, now);
+	return TRUE;
 }
 
 /* a bot leaves as a player who quits does (game_update_quit_players) */

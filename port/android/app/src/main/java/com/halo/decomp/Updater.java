@@ -49,7 +49,8 @@ import java.util.zip.ZipInputStream;
  * over it.
  */
 final class Updater {
-    private static final String REPOSITORY = "ChupathingyCE/chupathingyce";
+    /** the releases of this fork, not ChupathingyCE's (as updater.c's UPDATE_REPOSITORY) */
+    private static final String REPOSITORY = "LopezNoah/chupathingyce";
     private static final String USER_AGENT = "ChupathingyCE/" + BuildConfig.HALO_VERSION + " (Android arm64)";
     /** the logcat tag, the native side's (port/android/host/host.h) */
     private static final String LOG_TAG = "chupathingyce";

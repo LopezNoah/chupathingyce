@@ -5,8 +5,8 @@ The high-res HUD's textures (hud_hires.h): which one stands for a bitmap being
 uploaded, and each one's GL texture.
 
 Which bitmap is at an address the game knows (from the loaded map's tags:
-port/linux/game/hud_hires_tags.c). Each texture is uploaded from its PNG when
-first drawn and kept: up to 69 of the HUD's, about 225 MB with their mip
+port/linux/game/hud_hires_tags.c). Each texture is decoded from its PNG when
+first drawn and kept: up to 71 of the HUD's, about 227 MB with their mip
 levels, though a game draws only some (the scopes' only when zoomed), and
 the titles of the menus shown, about 3 MB each (11 MB for the carnage
 report's, a whole panel), and their button icons, about 0.3 MiB each (5.3

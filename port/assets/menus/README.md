@@ -73,7 +73,8 @@ It needs `rsvg-convert`, Pillow, NumPy and SciPy. It writes every file, so
 
 A settings screen (Controls Setup, Gamepads, Mouse, Audio, Video or Network
 Setup) is changed in `tools/port_settings.py`, not in its XML, and written
-with the command above.
+with the command above. Teamplay Options also has the port's VOTE KICK
+spinner (`network.votekick`), generated with the multiplayer widgets.
 
 ## Elements
 

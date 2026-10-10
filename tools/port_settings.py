@@ -360,7 +360,12 @@ MT = "main_menu/multiplayer_type_select"
 # and their helps after the five of its own (its helps are the rows' values'
 # in turn: menu_functions.c's gametype_option_help)
 SLAYER_EDIT = "main_menu/settings_select/multiplayer_setup/playlist_edit/slayer_edit"
+TEAMPLAY_EDIT = "main_menu/settings_select/multiplayer_setup/teamplay_options_edit"
 STRING_INSERTS = {
+    f"{TEAMPLAY_EDIT}/cap_teamplay_options": [(10, [
+        "Players can vote to kick a player, from the\\nscoreboard.",
+        "Players cannot vote to kick anyone.",
+    ])],
     f"{SLAYER_EDIT}/var_kills_to_win": [(5, ["75", "100", "150", "200", "250", "500"])],
     f"{SLAYER_EDIT}/cap_slayer": [(11, [
         "Seventy-five kills to win. Settle in for a long\\nfight.",
@@ -447,6 +452,11 @@ WIDGET_PATCHES = {
     # button settings, BITMAP_FRAMES; menu_functions.c's
     # profile_gamepad_layout)
     f"{PE}/profile_edit_extended_desc_pic": {"inputs": ["port gamepad layout preview"]},
+    # (the host's optional vote-kick setting, after Teamplay Options' own rows)
+    f"{TEAMPLAY_EDIT}/teamplay_options_menu": {"insert_before": {
+        f"{TEAMPLAY_EDIT}/teamplay_button_bar": [
+            f'<child widget="{TEAMPLAY_EDIT}/op_votekick" x="54" y="163"/>',
+        ]}},
     # (straight to their screens: no "checking for updates" dialog, which
     # asked the PC version's servers)
     f"{MT}/multiplayer_type_join_internet_item": {"set": {"string_index": 6}, "handlers": [
@@ -1157,12 +1167,39 @@ def _map_kind() -> list:
     return lines
 
 
+def _teamplay_votekick_extra() -> list:
+    """Server Setup's optional vote-kick toggle on Teamplay Options."""
+    base = f"{TEAMPLAY_EDIT}/votekick"
+    lines = _widget(f"{TEAMPLAY_EDIT}/op_votekick", [("width", 512), ("height", 28),
+                                                       ("flags", "pass_unhandled_to_focused_child"),
+                                                       ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                    [f'<child widget="{base}_label"/>', f'<child widget="{base}_spinner" x="320" y="1"/>'])
+    lines += _widget(f"{base}_label", [("type", "text"), ("controller", 1), ("width", 300), ("height", 22),
+                                        ("text", "VOTE KICK:"), ("font", "ui\\large_ui"),
+                                        ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
+    lines += _widget(f"{base}_spinner", [("type", "spinner"), ("left", 2), ("top", 2), ("width", 148),
+                                          ("height", 20),
+                                          ("flags", "pass_unhandled_to_focused_child left_right_tabs_items"),
+                                          ("strings", "ON|OFF"), ("setting", "network.votekick"),
+                                          ("values", "true|false"), ("font", "ui\\large_ui"),
+                                          ("color", "#FF2896FF"), ("align", "center"), ("text_y", 4),
+                                          ("list_flags", "items_from_strings"),
+                                          ("header_bitmap", "bitmaps/arrow_sm_left"),
+                                          ("footer_bitmap", "bitmaps/arrow_sm_right"),
+                                          ("header_bounds", "7 -6 19 0"), ("footer_bounds", "7 150 19 156")],
+                     ['<on event="created" run="port setting load"/>',
+                      '<on event="deleted" run="port setting save"/>',
+                      '<on event="left_mouse" run="mouse spinner 1wide click"/>'])
+    return lines
+
+
 def multiplayer_files() -> dict:
     """the port's multiplayer widgets: the browser's additions, the server
     settings, the lobby"""
     head = ['<?xml version="1.0" encoding="UTF-8"?>',
             "<!-- The port's multiplayer screens, in the PC version's style (tools/port_settings.py) -->", "<menus>"]
     return {
+        f"{TEAMPLAY_EDIT}".replace("/", ".") + ".port.xml": head + _teamplay_votekick_extra() + ["</menus>", ""],
         f"{MT}/join_game".replace("/", ".") + ".port.xml": head + _join_game_extras() + ["</menus>", ""],
         f"{MT}/server_settings".replace("/", ".") + ".xml": head + _server_settings() + ["</menus>", ""],
         f"{MT}/lobby".replace("/", ".") + ".xml": head + _lobby() + ["</menus>", ""],

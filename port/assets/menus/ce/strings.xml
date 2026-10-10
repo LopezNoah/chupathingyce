@@ -1023,6 +1023,8 @@
 		<string text="Players who kill a teammate will be assessed\na fifteen-second respawn penalty the next time\nthey die."/>
 		<string text="Team autobalancing will be disabled.  Players will\nbe free to change teams as they wish."/>
 		<string text="Team autobalancing will be enabled.  Players will\nnot be able to change to a more full team."/>
+		<string text="Players can vote to kick a player, from the\nscoreboard."/>
+		<string text="Players cannot vote to kick anyone."/>
 	</strings>
 	<strings name="main_menu/settings_select/multiplayer_setup/teamplay_options_edit/teamplay_options_labels">
 		<string text="FRIENDLY FIRE:"/>

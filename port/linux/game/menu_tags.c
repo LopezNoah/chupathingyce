@@ -25,13 +25,15 @@ is copied, with ours after it; every existing tag keeps its index. All of it
 is let go in scenario_tags_unload, before the next map's tags load.
 
 A multiplayer map gets them too, for its in-game pause menu's SETTINGS
-(pause_patch): there the map's tags they name that it has not (ui.map's
-pictures, sounds and screens) are none, a missing picture drawn blank, and
-no screen pauses the game (a network game's clock runs on).
+(pause_patch); so does a single-player campaign's map (pause_campaign_patch),
+whose screen pauses the game. There the map's tags they name that it has not
+(ui.map's pictures, sounds and screens) are none, and a missing picture is
+drawn blank. A network game's clock runs on.
 */
 
 #include "cseries.h"
 #include "bitmaps/bitmap_group.h"
+#include "game/game.h"
 #include "tag_files/tag_groups.h"
 #include "text/text_group.h"
 #include "rasterizer/xbox/rasterizer_xbox_hardware_bitmaps.h"
@@ -49,6 +51,7 @@ int platform_window_sizes(long *widths, long *heights, int maximum);
 
 /* the game's network server (this machine hosts: network_game_globals.c) */
 void *global_network_game_server_get(void);
+boolean network_game_is_active(void);
 
 /* cache_files.c's (port) */
 void *cache_files_tag_instances(long *count);
@@ -72,7 +75,9 @@ boolean pc_menu_frame_placement(struct bitmap_data const *bitmap, short *x, shor
 /* the multiplayer maps' widget collection, whose pause screens pause_patch
 adds to */
 #define MULTIPLAYER_COLLECTION "ui\\shell\\multiplayer"
-/* the tags pause_patch adds: two buttons and their texts */
+/* the campaign's full-screen pause screen, which pause_campaign_patch adds to */
+#define CAMPAIGN_PAUSE_SCREEN "ui\\shell\\solo_game\\pause_game\\pause_game"
+/* the tags pause_patch and pause_campaign_patch add */
 #define PAUSE_PATCH_TAGS 4
 /* what a frame of ui.map's is drawn as in a game map, which has not got it */
 #define BLANK_PNG "ce/port/blank__0.png"
@@ -1700,6 +1705,74 @@ static void pause_patch(struct cache_file_tag_instance *instances)
 		platform_log("menus: the pause menu has SETTINGS%s", host ? " and END GAME" : "");
 }
 
+/* the list's rows spaced over the span they had when SETTINGS does not fit
+in its bounds (a campaign pause menu's box beside its mission objectives) */
+static void pause_list_fit(struct ui_widget_definition *list, short span)
+{
+	struct ui_widget_child_reference *children = xbox_pointer(list->child_widgets.address);
+	long count = list->child_widgets.count, child;
+
+	for (child = 1; child < count; child++)
+		children[child].vertical_offset = (short)(children[0].vertical_offset + child * span / (count - 1));
+}
+
+/* SETTINGS before REVERT TO SAVED in a single-player campaign's pause menu;
+the same in_game screen used by multiplayer pause menus */
+static void pause_campaign_patch(struct cache_file_tag_instance *instances)
+{
+	long screen = tag_loaded(UI_WIDGET_DEFINITION_TAG, CAMPAIGN_PAUSE_SCREEN);
+	struct ui_widget_definition *definition;
+	struct ui_widget_child_reference *children;
+	long child;
+
+	if (screen == NONE)
+		return;
+	definition = tag_get(UI_WIDGET_DEFINITION_TAG, screen);
+	children = xbox_pointer(definition->child_widgets.address);
+	for (child = 0; child < definition->child_widgets.count; child++)
+	{
+		struct ui_widget_definition *list;
+		struct ui_widget_child_reference const *rows;
+		short span, growth, bottom;
+		long revert;
+
+		if (children[child].widget_tag.index == NONE)
+			continue;
+		list = tag_get(UI_WIDGET_DEFINITION_TAG, children[child].widget_tag.index);
+		if (list->type != _widget_type_column_list || list->child_widgets.count < 2)
+			continue;
+		rows = xbox_pointer(list->child_widgets.address);
+		for (revert = 0; revert < list->child_widgets.count; revert++)
+		{
+			if (tag_name_ends(rows[revert].widget_tag.index, "\\restart_at_save_point_button"))
+				break;
+		}
+		if (revert == list->child_widgets.count)
+			return;
+		span = (short)(rows[list->child_widgets.count - 1].vertical_offset - rows[0].vertical_offset);
+		bottom = list->bounds.y1;
+		if (pause_list_patch(instances, list, revert, FALSE, &growth))
+		{
+			if (growth)
+			{
+				pause_list_fit(list, span);
+				list->bounds.y1 = bottom;
+			}
+			platform_log("menus: the single-player pause menu has SETTINGS");
+		}
+		return;
+	}
+}
+
+/* whether this is a single-player campaign map (the one-player local game,
+not network co-op or split-screen multiplayer) */
+static boolean single_player_campaign_map(void)
+{
+	return tag_loaded('Soul', MULTIPLAYER_COLLECTION) == NONE &&
+		tag_loaded(UI_WIDGET_DEFINITION_TAG, CAMPAIGN_PAUSE_SCREEN) != NONE &&
+		game_connection() == _game_connection_local && !network_game_is_active() && !game_is_cooperative();
+}
+
 /* whether display.menus asks for the PC version's menus: "pc" in any case
 (a value neither "pc" nor "xbox" is said once in the log, and is the Xbox's) */
 static boolean menus_pc_chosen(void)
@@ -1732,6 +1805,7 @@ void menu_tags_loaded(
 	long widget_count, own_lists = 0, total, index;
 
 	boolean game_map = strcmp(map_name, "ui") != 0;
+	boolean campaign = game_map && single_player_campaign_map();
 
 	/* (ui.map, and a game's in-game settings screens) */
 	if (!menus_pc_chosen())
@@ -1832,6 +1906,8 @@ void menu_tags_loaded(
 	if (game_map)
 	{
 		pause_patch(instances);
+		if (campaign)
+			pause_campaign_patch(instances);
 		if (build.failed)
 			goto failed;
 		/* (those it made) */

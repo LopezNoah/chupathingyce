@@ -237,6 +237,12 @@ stay. The Xbox's pause box is drawn taller to hold them (a redraw,
 what is below its list moves down. The few pictures of the settings that
 come from the main menu's map are not drawn there.
 
+A single-player campaign's pause menu has SETTINGS before REVERT TO SAVED,
+opening the same in-game settings over the pause dim while the game stays
+paused. Its row is centred if the list has room, otherwise the list keeps its
+original bounds and the rows are spaced over their original span. Gamepads'
+OK saves the active profile's controller settings.
+
 The menus are XML files in `port/assets/menus` (`tools/ce_menus.py` writes
 them from the PC version's tags), which the game contains. To change them,
 put files in a `menus` folder next to `config.toml`: a file with the same

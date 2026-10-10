@@ -228,7 +228,7 @@ def main():
     assert 'SDL_SCANCODE_F2' not in events and 'SDL_SCANCODE_F10' not in events
     unit = (PRELUDE + block(events, 'void platform_screenshot_request(void)') +
             block(events, 'BOOL platform_screenshot_take_request(void)') +
-            '\n' + keyboard[keyboard.index('#define MAXIMUM_BINDINGS'):keyboard.index('unsigned long halo_keyboard_actions(')] +
+            '\n' + keyboard[keyboard.index('#define MAXIMUM_BINDINGS'):keyboard.index('unsigned int halo_keyboard_actions(')] +
             '\nstatic void capture_key(SDL_Event event) { do {\n' +
             block(events, 'if (binding_capture == _binding_capture_waiting && event.key.down') + '\n} while (0); }\n' +
             block(render, 'static void write_key_screenshot(') + TESTS)

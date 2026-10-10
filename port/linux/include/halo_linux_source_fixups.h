@@ -28,6 +28,7 @@ void render_interpolation_tick(void);
 void render_interpolation_reset(void);
 void render_interpolation_frame_begin(void);
 void render_interpolation_frame_end(void);
+void render_interpolation_prepare_frame(void);
 float render_interpolation_fraction(void);
 struct real_matrix4x3 *render_interpolation_object_node_matrices(long object_index);
 struct observer_result const *render_interpolation_camera(short local_player_index,

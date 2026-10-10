@@ -174,6 +174,10 @@ PLATFORM_FLAGS = [
     "-Wno-ignored-pragmas",
 ]
 
+# the job graph's scheduler (engine/core/jobs; port/linux/src/posix_jobs.c)
+JOB_SOURCES = [Path("engine/core/jobs/job_graph.c"), Path("engine/core/jobs/job_system.c"),
+               Path("engine/core/jobs/job_phase.c")]
+
 # Platform files named posix_*.c talk to glibc only. They are built with the
 # host's native ABI (no -malign-double, no 16-bit wchar_t, no XDK headers) so
 # glibc structures such as struct stat have their real layout.
@@ -328,7 +332,7 @@ def linux_configure_inputs() -> list[Path]:
     # re-runs it)
     game_folders = sorted({source.parent for source in game_sources(_load_port_config())})
     return [PORT_CONFIG, Path(__file__), PORT_DIR / "src", PORT_DIR / "game", XDK_INCLUDE,
-            Path("engine/core"), *game_folders, *hud_configure_inputs()]
+            Path("engine/core"), Path("engine/core/jobs"), *game_folders, *hud_configure_inputs()]
 
 
 def _quote(path: Any) -> str:
@@ -462,6 +466,9 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
         elif source.name in ("posix_ui_font.c", "posix_platform_image.c"):
             # (the overlay's fonts: stb_truetype; their data, tools/embed_assets.py --fonts)
             add_object(source, f"{posix_cflags} -I{STB_DIR}", posix=True)
+        elif source.name == "posix_jobs.c":
+            # (the job graph's adapter: this build compiles engine/core/jobs)
+            add_object(source, f"{posix_cflags} -DHALO_JOBS_ENABLED", posix=True)
         elif source.name.startswith("posix_"):
             add_object(source, posix_cflags, posix=True)
         elif source.name in VERSION_SOURCES:
@@ -471,6 +478,9 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
     # Shared trace implementation, compiled with the same ABI as its Linux-port
     # caller. The files live under engine/core/trace and are also unit-tested.
     for source in (Path("engine/core/trace/trace.c"), Path("engine/core/trace/trace_capture.c")):
+        add_object(source, posix_cflags, posix=True)
+    # The job graph (LopezNoah/engine, ADR 0049), likewise; tools/test_halo_jobs.py
+    for source in JOB_SOURCES:
         add_object(source, posix_cflags, posix=True)
     # (the dedicated server's own: tools/server_build.py)
     for source in units.platform_sources:

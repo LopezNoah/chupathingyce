@@ -29,6 +29,7 @@ from .linux_build import (
     CUSTOM_EDITION_DEFINES,
     EXPAT_DIR,
     EXPAT_SOURCES,
+    JOB_SOURCES,
     KCP_DIR,
     MBEDTLS_DIR,
     MINIUPNPC_DEFINES,
@@ -326,6 +327,8 @@ class Lp64Build:
                 add(source, f"{posix_cflags} -DHALO_64BIT -I{STB_DIR}", native=True)
             elif source.name == "posix_ui_font.c":
                 add(source, f"{posix_cflags} -I{STB_DIR}", native=True)
+            elif source.name == "posix_jobs.c":
+                add(source, f"{posix_cflags} -DHALO_JOBS_ENABLED", native=True)
             elif source.name.startswith("posix_"):
                 add(source, posix_cflags, native=True)
             elif source.name in VERSION_SOURCES:
@@ -347,6 +350,8 @@ class Lp64Build:
             add(source, platform_cflags)
         # Shared trace implementation has no game/XDK ABI dependencies.
         for source in (Path("engine/core/trace/trace.c"), Path("engine/core/trace/trace_capture.c")):
+            add(source, posix_cflags, native=True)
+        for source in JOB_SOURCES:
             add(source, posix_cflags, native=True)
         # the host's own platform units, with its ABI
         for source in host.host_sources:

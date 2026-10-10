@@ -17,6 +17,8 @@ enum halo_trace_zone
 	HALO_TRACE_ZONE_MAP_PRECACHE,
 	HALO_TRACE_ZONE_SCENARIO_LOAD,
 	HALO_TRACE_ZONE_TEXTURE_UPLOAD,
+	HALO_TRACE_ZONE_RENDER_FRAME,          /* prepare + main_game_render (main.c) */
+	HALO_TRACE_ZONE_INTERPOLATION_PREPARE, /* the blend jobs (render_interpolation.c) */
 	HALO_TRACE_ZONE_COUNT
 };
 

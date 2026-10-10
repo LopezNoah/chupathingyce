@@ -331,6 +331,10 @@ symbols in this file:
 
 /* ---------- headers */
 
+#ifdef HALO_TRACE_ENABLED
+#include "../../port/linux/src/halo_trace.h"
+#endif
+
 #include <stdint.h>
 
 #include "cseries.h"
@@ -3453,7 +3457,16 @@ void main_loop(
 				{
 					profile_render_start();
 					render_interpolation_frame_begin();
+					/* port: the frame's blends, as jobs, before it is drawn
+					(port/linux/game/render_interpolation.c) */
+#ifdef HALO_TRACE_ENABLED
+					halo_trace_zone_begin(HALO_TRACE_ZONE_RENDER_FRAME);
+#endif
+					render_interpolation_prepare_frame();
 					main_game_render((double)main_globals.seconds_elapsed);
+#ifdef HALO_TRACE_ENABLED
+					halo_trace_zone_end(HALO_TRACE_ZONE_RENDER_FRAME);
+#endif
 					render_interpolation_frame_end();
 					profile_render_end();
 				}

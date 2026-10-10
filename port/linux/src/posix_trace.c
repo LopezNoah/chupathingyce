@@ -48,7 +48,9 @@ static struct engine_trace_location const trace_zone_locations[HALO_TRACE_ZONE_C
 	{ "bot_ai", "source/features/bots/bots.c", 0 },
 	{ "map_precache", "source/game/game.c", 0 },
 	{ "scenario_load", "source/game/game.c", 0 },
-	{ "texture_upload", "port/linux/src/xbox_textures.c", 0 }
+	{ "texture_upload", "port/linux/src/xbox_textures.c", 0 },
+	{ "render_frame", "source/main/main.c", 0 },
+	{ "interpolation_prepare", "port/linux/game/render_interpolation.c", 0 }
 };
 static uint64_t trace_tick_index;
 static uint64_t trace_tick_allocations;

@@ -65,7 +65,8 @@ static long hires_bitmap_count = 0;
 
 /* the bitmaps some of whose sprites have a texture, with their placeholder,
 and whether the texture can be drawn for the pixels at checked_address
-(checked again when the texture cache loads them elsewhere) */
+(checked again when the texture cache loads them elsewhere, or the settings
+change) */
 static struct
 {
 	struct bitmap_data *bitmap;
@@ -192,7 +193,7 @@ struct bitmap_data const *hud_hires_sprite_bitmap(
 		if (sprite_bitmap->cache_block_index == NONE || !sprite_bitmap->base_address)
 			break;
 		if (hires_sprite_bitmaps[index].checked_address != sprite_bitmap->base_address ||
-			hires_sprite_bitmaps[index].checked_config_changes != config_changes())
+				hires_sprite_bitmaps[index].checked_config_changes != config_changes())
 		{
 			hires_sprite_bitmaps[index].checked_address = sprite_bitmap->base_address;
 			hires_sprite_bitmaps[index].checked_config_changes = config_changes();

@@ -941,7 +941,7 @@ boolean cache_file_header_verify(
 #endif
 		) ||
 		/* port: its name ends within its field (csstrlen read on past it) */
-		!memchr(header->name, 0, sizeof(header->name))
+		!memchr(header->name, 0, sizeof(header->name)))
 	{
 		if (fatal)
 		{

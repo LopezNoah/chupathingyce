@@ -397,7 +397,7 @@ symbols in this file:
 #include "text/draw_string.h"
 #include "text/font_group.h"
 #include "tag_files/files.h"
-#include "render_fov.h" /* port: local world FOV, before projection and culling */
+#include "view_fov.h" /* port: display.fov, before the projection and culling */
 #ifdef HALO_64BIT
 #include "input/input_abstraction.h"
 #include "interface/player_ui.h"
@@ -1158,6 +1158,7 @@ void set_window_camera_values(
 		window->rasterizer_camera.position = observer->position;
 		window->rasterizer_camera.forward = observer->forward;
 		window->rasterizer_camera.up = observer->up;
+		/* port: display.fov's view, the local render view only (view_fov.c) */
 		window->rasterizer_camera.vertical_field_of_view =
 			render_fov_vertical(window->local_player_index, 2.0f * arctangent(
 				0.75f * render_camera_get_adjusted_field_of_view_tangent(

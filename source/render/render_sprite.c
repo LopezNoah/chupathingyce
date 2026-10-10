@@ -76,7 +76,6 @@ symbols in this file:
 /* ---------- headers */
 
 #include "cseries/cseries.h"
-#include "viewmodel_fov.h"
 #include "bitmaps/bitmap_group.h"
 #include "cseries/errors.h"
 #include "interface/hud_draw.h"
@@ -90,6 +89,7 @@ symbols in this file:
 #include "cache/texture_cache.h"
 #include "tag_files/tag_files.h"
 #include "tag_files/tag_groups.h"
+#include "view_fov.h" /* port: port/linux/game/view_fov.c */
 
 /* ---------- constants */
 
@@ -214,6 +214,7 @@ void build_sprites_begin(
 		!TEST_FLAG(flags, _build_sprites_valid_bit));
 
 	data->bitmap_group_index = bitmap_group_index;
+	/* port: the first-person weapon's projection (view_fov.c) */
 	if (TEST_FLAG(flags, _build_sprites_first_person_bit))
 		viewmodel_projection_begin();
 	data->flags = flags;
@@ -285,6 +286,7 @@ void build_sprites_end(
 	}
 
 	SET_FLAG(data->flags, _build_sprites_valid_bit, FALSE);
+	/* port: (view_fov.c) */
 	if (TEST_FLAG(data->flags, _build_sprites_first_person_bit))
 		viewmodel_projection_end();
 	return;

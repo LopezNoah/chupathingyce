@@ -95,7 +95,6 @@ symbols in this file:
 #include "game/players.h"
 #include "interface/hud_definitions.h"
 #include "interface/hud_draw.h"
-#include "render_fov.h"
 #include "interface/interface.h"
 #include "interface/unit_hud_interface_definition.h"
 #include "items/weapon_definitions.h"
@@ -105,6 +104,7 @@ symbols in this file:
 #include "render/render.h"
 #include "units/unit_definitions.h"
 #include "units/units.h"
+#include "view_fov.h" /* port: port/linux/game/view_fov.c */
 
 /* ---------- constants */
 
@@ -382,7 +382,7 @@ static void hud_draw_bitmap_internal(
 	real_vector2d const *xy_scale,
 	real theta,
 	pixel32 color,
-	real reticle_scale);
+	real reticle_scale);	/* port: (display.fov, view_fov.c) */
 static void hud_draw_bitmap_with_meter(
 	void *meter_parameters,
 	struct bitmap_data const *bitmap,
@@ -1550,8 +1550,9 @@ static void hud_draw_bitmap_internal(
 		real center_y = (render.camera.window_bounds.y1 + render.camera.window_bounds.y0) / 2 -
 			render.camera.viewport_bounds.y0;
 
-		/* Transform the complete authored reticle about its aiming anchor:
-		 * offsets and separate sprites must shrink along with their artwork. */
+		/* port: the reticle scaled about the view's centre, where it aims,
+		with display.fov (view_fov.c): its offsets and separate pieces
+		shrink with its picture */
 		for (vertex_index = 0; vertex_index < 4; vertex_index++)
 		{
 			vertices[vertex_index].position.x = center_x +
@@ -1645,6 +1646,7 @@ static void hud_draw_bitmap_with_meter(
 		&xy_scale,
 		theta,
 		color,
+		/* port: a reticle at the centre keeps to its aim (view_fov.c) */
 		is_crosshair_bitmap && absolute_placement->corner == _hud_anchor_center ?
 			render_fov_reticle_scale(render.local_player_index) : 1.0f);
 

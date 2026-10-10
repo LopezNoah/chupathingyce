@@ -20,6 +20,24 @@ ninja macos
 build/macos/halo          # or open build/macos/ChupathingyCE.app
 ```
 
+## Opt-in native Metal
+
+The default build remains OpenGL. To build and play using native Metal:
+
+```sh
+python3 configure.py --macos-metal
+ninja macos
+build/macos/halo
+```
+
+This also updates the application bundle to use Metal. Rebuild with
+`--no-macos-metal` to return to OpenGL. Other platforms are unaffected.
+See [the Metal renderer notes](metal/README.md) for validation evidence and
+current limitations (notably custom Forge/platform meshes and rendering enhancements).
+Online Games and Link Profile overlays now render through Metal. The offline
+launcher `tools/play_platform_macos.sh` also needs `--infection` at build time;
+it keeps Infection rules off and skips unsupported platform visuals on Metal.
+
 ## 64-bit
 
 The game was written for the Xbox's 32-bit CPU, and its data formats embed

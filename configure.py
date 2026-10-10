@@ -48,6 +48,12 @@ parser.add_argument(
 )
 features.add_arguments(parser)
 parser.add_argument(
+    "--macos-metal",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="experimental native macOS Metal gameplay renderer (opt-in; default OpenGL; other platforms unchanged)",
+)
+parser.add_argument(
     "--lto",
     choices=["full", "thin", "off"],
     default="full",
@@ -99,6 +105,7 @@ sln = SimpleNamespace(
     **features.selection(args),
     port_lto=args.lto,
     port_portable=args.portable,
+    macos_metal=args.macos_metal,
     port_pgo=args.pgo,
     port_pgo_profile=args.pgo_profile,
     android_ndk=args.android_ndk,

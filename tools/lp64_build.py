@@ -346,8 +346,15 @@ class Lp64Build:
         # the high-res HUD's textures (port/assets/hud; port/linux/src/hud_hires.c),
         # with the platform units' flags: its table is hud_hires.h's, from the
         # 64-bit tree
+        # (data only: no Xbox inline functions, so not the semantics header,
+        # whose #pragma weak names they never declare; and the prefix's
+        # <stddef.h> finds port/linux/include/StdDef.h on a case-insensitive
+        # file system, which is the intended shim, so not that warning either)
+        generated_cflags = (platform_cflags
+                            .replace(f"-include {_quote(self.platform_semantics_header)}", "")
+                            + " -Wno-nonportable-include-path")
         for source in generated_sources:
-            add(source, platform_cflags)
+            add(source, generated_cflags)
         # Shared trace implementation has no game/XDK ABI dependencies.
         for source in (Path("engine/core/trace/trace.c"), Path("engine/core/trace/trace_capture.c")):
             add(source, posix_cflags, native=True)

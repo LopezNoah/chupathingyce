@@ -9,7 +9,8 @@ def manager_types():
     manager = manager[manager.index("/* ---------- constants */"):]
     definitions = read("source/sound/sound_definitions.h")
     classes = read("source/sound/sound_classes.h")
-    text = "typedef unsigned short word;\nstruct sound_preferences;\n"
+    # The harness compiles with the game's 32-bit ABI, where Xbox pointers are native pointers.
+    text = "typedef unsigned short word;\n#define XPTR(type) type *\nstruct sound_preferences;\n"
     for source, member in [(manager, "_sound_impulse ="), (manager, "_sound_waiting_for_cache_bit"),
                            (manager, "_sound_channel_idle"), (manager, "_sound_fade_mode_linear"),
                            (manager, "_fade_in_at_start_bit"), (manager, "_sound_spatialization_mode_none"),

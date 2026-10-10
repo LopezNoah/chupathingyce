@@ -68,7 +68,7 @@ def run(cc: str, sanitize: bool) -> None:
     description = description[:description.index("};") + 2]
     constants = (ROOT / "port/include/xdk/xdk_d3d8.h").read_text()
     constants = "\n".join(re.findall(
-        r"^#define (?:D3DFORMAT_|D3DSIZE_|D3DTEXTURE_|D3DCOMMON_PORT_)\w+[^\n]*",
+        r"^#define (?:D3DFORMAT_|D3DFMT_PORT_|D3DSIZE_|D3DTEXTURE_|D3DCOMMON_PORT_)\w+[^\n]*",
         constants, re.M))
     geometry = source[source.index("/* ---------- formats */"):
                       source.index("/* ---------- swizzling */")]

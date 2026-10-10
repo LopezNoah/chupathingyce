@@ -5,7 +5,7 @@ written grouped by section. */
 
 	/* computer-controlled players (source/features/bots/bots.c; configure.py --bots) */
 	{ "bots.count", _config_integer, "0", "HALO_BOTS", _environment_value, _platform_all,
-		"Computer-controlled players (0 to 3) in FFA or Team Slayer games you\n"
+		"Computer-controlled players (0 to 31) in FFA or Team Slayer games you\n"
 		"host by yourself: a custom game nobody else is in. Bots never join a game\n"
 		"another machine is in. They play as players do, with the same weapons,\n"
 		"health and rules; experimental." },

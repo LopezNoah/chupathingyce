@@ -36,7 +36,7 @@ Scope (a first, small slice):
   - basic ground driving only; no aircraft, objectives or advanced vehicle paths.
     debug.bot_sandbox is an opt-in test teleport, never normal spawn policy.
 
-Configuration (port/linux/src/port_config.c): bots.count (0..3), bots.skill.
+Configuration (port/linux/src/port_config.c): bots.count (0..31), bots.skill.
 */
 
 /* ---------- headers */
@@ -88,11 +88,16 @@ void platform_log(char const *format, ...);
 
 enum
 {
-	BOTS_MAXIMUM = 3,
-	/* the machine bots belong to: no real machine's, so that nothing that
+	/* (a 32-player lobby: the host and 31 bots) */
+	BOTS_MAXIMUM = 31,
+	/* the machines bots belong to: no real machine's, so that nothing that
 	works through the machines (their connections, their players' input) takes
-	them for anyone's. Its player list has room for MAXIMUM_LOCAL_PLAYERS */
+	them for anyone's. A machine's player list has room for
+	MAXIMUM_LOCAL_PLAYERS, so bots fill machines down from the last: bot n
+	is on BOT_MACHINE_INDEX - n / MAXIMUM_LOCAL_PLAYERS. Bots never join a
+	game another machine is in, so these never meet a real machine. */
 	BOT_MACHINE_INDEX = HALO_PORT_MAXIMUM_NETWORK_MACHINES - 1,
+	BOT_MACHINE_COUNT = (BOTS_MAXIMUM + MAXIMUM_LOCAL_PLAYERS - 1) / MAXIMUM_LOCAL_PLAYERS,
 	BOT_JOIN_DELAY_TICKS = TICKS_PER_SECOND,
 	BOT_PROGRESS_CHECK_TICKS = TICKS_PER_SECOND,
 	BOT_NAV_NEIGHBORS = 6,
@@ -474,12 +479,20 @@ static struct unit_datum *bot_living_unit(
 	return unit;
 }
 
+/* the machine of the bot in a slot */
+static long bot_machine_index(
+	short slot)
+{
+	return BOT_MACHINE_INDEX - slot / MAXIMUM_LOCAL_PLAYERS;
+}
+
 static struct player_datum *bot_player(
 	struct bot const *bot)
 {
 	struct player_datum *player = player_try_and_get(bot->player_index);
 
-	if (!player || player->network_player_data.machine_index != BOT_MACHINE_INDEX || player->quit_out_of_game)
+	if (!player || player->network_player_data.machine_index != bot_machine_index(bot->slot) ||
+		player->quit_out_of_game)
 		return NULL;
 	return player;
 }
@@ -2271,9 +2284,9 @@ static void bots_refresh(
 }
 
 static short bots_free_machine_slots(
-	void)
+	long machine_index)
 {
-	long *player_list = machine_get_player_list(BOT_MACHINE_INDEX);
+	long *player_list = machine_get_player_list(machine_index);
 	short index;
 	short count = 0;
 
@@ -2312,8 +2325,9 @@ static void bots_join(
 	struct bot *bot = NULL;
 	struct network_player network_player;
 	long player_index;
-	char name[12] = "Bot 0";
+	char name[12];
 	short character;
+	long machine_index;
 
 	for (bot_index = 0; bot_index < BOTS_MAXIMUM; bot_index++)
 	{
@@ -2328,21 +2342,30 @@ static void bots_join(
 		return;
 	}
 	bots_globals.last_join_time = now;
-	if (bots_free_machine_slots() == 0)
+	bot_index = (short)(bot - bots_globals.bots);
+	machine_index = bot_machine_index(bot_index);
+	if (bots_free_machine_slots(machine_index) == 0)
 		return;
 
 	csmemset(&network_player, 0, sizeof(network_player));
-	bot_index = (short)(bot - bots_globals.bots);
-	name[4] = (char)('1' + bot_index);
+	csmemset(name, 0, sizeof(name));
+	name[0] = 'B'; name[1] = 'o'; name[2] = 't'; name[3] = ' ';
+	if (bot_index + 1 >= 10)
+	{
+		name[4] = (char)('0' + (bot_index + 1) / 10);
+		name[5] = (char)('0' + (bot_index + 1) % 10);
+	}
+	else
+		name[4] = (char)('1' + bot_index);
 	for (character = 0; character < 11 && name[character]; character++)
 		network_player.name[character] = (wchar_t)name[character];
 	network_player.primary_color_index = (short)((3 + bot_index * 5) % 18);
-	network_player.machine_index = (char)BOT_MACHINE_INDEX;
-	network_player.controller_index = (char)bot_index;
+	network_player.machine_index = (char)machine_index;
+	network_player.controller_index = (char)(bot_index % MAXIMUM_LOCAL_PLAYERS);
 	network_player.team_index = bots_choose_team();
 	network_player.player_list_index = NONE;
 
-	player_index = player_new(BOT_MACHINE_INDEX, NONE, NONE, &network_player);
+	player_index = player_new(machine_index, NONE, NONE, &network_player);
 	if (player_index == NONE)
 		return;
 	/* (as a player who joins a game in progress:

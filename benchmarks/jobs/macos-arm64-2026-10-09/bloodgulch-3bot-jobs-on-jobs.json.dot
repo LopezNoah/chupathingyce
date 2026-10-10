@@ -1,0 +1,8 @@
+digraph jobs {
+  rankdir=LR;
+  subgraph cluster_presentation { label="presentation";
+    presentation_0 [label="interpolation_blend_objects\n24 us"];
+    presentation_1 [label="interpolation_publish_poses\n0 us\nmain thread" shape=box];
+    presentation_0 -> presentation_1 [style=dashed color=red label=RAW];
+  }
+}

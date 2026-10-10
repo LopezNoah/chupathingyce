@@ -57,3 +57,21 @@ Raw trace, RSS samples, and game log are `bloodgulch-3bot-trace.json`, `bloodgul
 ## Other requested scenarios
 
 Not measured: Blood Gulch Team Slayer, Foundation, Portent/large Custom Edition map, and repeated map transitions. Missing-texture counts and upload latency/spike distributions are not instrumented. The trace exposes draw calls, bot/navigation AI CPU zones, successful engine/game-state allocator calls per simulation tick, and latest map-precache and scenario-load durations.
+
+## Follow-up: job-graph comparison (appended 2026-10-09)
+
+This scenario was re-run with the job-graph integration on and off:
+[benchmarks/jobs/macos-arm64-2026-10-09](../../jobs/macos-arm64-2026-10-09/README.md).
+
+- **Pacing.** `D3DDevice_Present` p95 was 13.5–14.0 ms in all four runs,
+  against this baseline's 13.48 ms, so frame pacing is unchanged.
+- **CPU.** No measurable CPU frame-time improvement.
+- **RSS.** Median RSS was 417–442 MiB with jobs off and 453–454 MiB with
+  jobs on. That is unresolved, and within the jobs-off control's 25 MiB
+  spread.
+- **Unchanged.** Tagged `game` memory stayed at 312.1 MiB, and allocations
+  per tick stayed at 0.
+- **HEAD comparison (appended).** HEAD `80b829aa`, without the job graph,
+  re-run twice in a separate worktree: Present p95 13.45/12.83 ms and RSS
+  median 418.5/439.5 MiB, matching this build with jobs off. Details are in
+  the jobs benchmark README.

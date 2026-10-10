@@ -26,6 +26,7 @@ Conventions carried over from the Xbox:
 #include "halo_ui_pointer.h"
 #include "port_config.h"
 #include "halo_trace.h"
+#include "halo_frame_stats.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -5026,6 +5027,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	}
 	pthread_mutex_unlock(&vertical_blank_lock);
 	halo_trace_frame_end((uint64_t)device.frame);
+	halo_frame_stats_present();
 }
 
 HRESULT WINAPI D3DDevice_PersistDisplay(void)

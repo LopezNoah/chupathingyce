@@ -589,6 +589,12 @@ static const struct config_setting config_settings[] =
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
+	{ "debug.game_speed", _config_real, "1.0", "HALO_GAME_SPEED", _environment_value, _platform_all,
+		"How fast each game runs, as the game_speed script command sets it, for\n"
+		"tests: 1 is real time, up to 100. A frame runs at most 30 ticks in a\n"
+		"network game (7 in a local one), so with debug.null_renderer and\n"
+		"display.max_fps -1 a test game runs as fast as the machine can. A client\n"
+		"of another's game runs at the host's speed." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,
 		"Keep the window hidden (and never fullscreen)." },
 	{ "debug.null_renderer", _config_boolean, "false", "HALO_NULL_RENDERER", _environment_set_is_true, _platform_all,

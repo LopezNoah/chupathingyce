@@ -12,6 +12,9 @@ written grouped by section. */
 	{ "bots.skill", _config_string, "\"marine\"", "HALO_BOT_SKILL", _environment_value, _platform_all,
 		"How well the bots play: \"recruit\", \"marine\", \"odst\" or \"spartan\".\n"
 		"Skill changes their reactions, aim and sight, never their health or damage." },
+	{ "debug.bot_decisions", _config_boolean, "false", "HALO_BOT_DECISIONS", _environment_set_is_true, _platform_all,
+		"Log each bot's change of behavior with every behavior's utility score\n"
+		"and its confidence (docs/bot_decisions.md); off in normal play." },
 	{ "debug.nav_probe", _config_boolean, "false", "HALO_NAV_PROBE", _environment_set_is_true, _platform_all,
 		"Opt-in BSP navigation walking probe controlling Bot 1 in a solo Slayer game.\n"
 		"No teleport or physics bypass; off in normal play." },

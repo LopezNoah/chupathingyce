@@ -13,16 +13,25 @@ no extra health, damage or knowledge: skill changes reaction time, aim error,
 turn speed, sight and tactics only, and a bot fights only enemies it has seen
 or that have just hurt it.
 
-Decisions use the game-independent AI primitives (source/engine_ai):
-  - behavior.h: a priority tree, VEHICLE > RETREAT > SCAVENGE > FIGHT > ROAM,
-    reevaluation so that a roaming bot turns to fight as soon as it sees an
-    enemy, and a fighting one falls back when its shields are down;
+Decisions follow Halo Infinite's (GDC 2022, "Thinking Like Players";
+docs/bot_decisions.md), on the game-independent AI primitives (source/engine_ai):
+  - utility.h: every behavior is scored, 0 to 1, from the bot's confidence,
+    its target and how it knows it, and its opportunities; the highest runs.
+    A decision is made every BOT_DECISION_TICKS (about a human's reaction
+    time), staggered by slot, or at once when the running behavior can no
+    longer run; hysteresis keeps a bot from thrashing between near scores;
+  - always be shooting: whatever the behavior, a bot aims and fires at an
+    enemy it sees; the behavior moves it;
+  - bot_manager.h: the blackboard: the game mode's ambitions, and each team's
+    sightings, shared by skills that share what they see;
+  - behavior.h: a flat tree of the behaviors (VEHICLE, RETREAT, SCAVENGE,
+    FIGHT, ROAM), whose leaves fail unless they are the chosen one;
   - behavior_intent.h / intent.h: the leaves emit intents (look, move, fire,
     jump, grenade, interact, exit vehicle), which a Halo-owned executor validates against the
     live player and unit before they become the player's action;
-  - navigation.h / traversal.h: an incremental route search over a graph
-    built from the map's player starting locations, linked where a biped can
-    walk straight between them, and per-bot route following.
+  - bot_navigation.h / navigation_world.h: per-bot routes over validated BSP
+    walkable surfaces, checked with the live biped capsule; three map-relative
+    lanes keep squads spread. The spawn graph is a delayed fallback.
 
 Scope (a first, small slice):
   - only the host decides for its bots, and only in a game nobody else is in:
@@ -31,9 +40,10 @@ Scope (a first, small slice):
     replicated to other machines yet;
   - a game a bot has played in is never reported to the game list or Delta
     Stats (bots_game_had_bots);
-  - free for all and team Slayer; reachable weapon upgrades and empty ground
-    vehicle seats, with preference for a gunner when a friendly driver is in;
-  - basic ground driving only; no aircraft, objectives or advanced vehicle paths.
+  - free for all and team Slayer; visible weapon upgrades, BSP lane patrol,
+    ground vehicles and fixed turrets; Spartan bots share observed enemy callouts;
+  - basic ground driving only, including stopping near a teammate for an open
+    seat; no aircraft, objectives, horn signal or advanced vehicle paths.
     debug.bot_sandbox is an opt-in test teleport, never normal spawn policy.
 
 Configuration (port/linux/src/port_config.c): bots.count (0..31), bots.skill.
@@ -68,7 +78,10 @@ Configuration (port/linux/src/port_config.c): bots.count (0..31), bots.skill.
 #include "engine_ai/intent.h"
 #include "engine_ai/navigation.h"
 #include "engine_ai/traversal.h"
+#include "engine_ai/utility.h"
 #include "extensions/extension_api.h"
+#include "bot_manager.h"
+#include "bot_navigation.h"
 #include "navigation_world.h"
 
 #ifdef HALO_FEATURE_BOTS
@@ -101,18 +114,42 @@ enum
 	BOT_PROGRESS_CHECK_TICKS = TICKS_PER_SECOND,
 	BOT_NAV_NEIGHBORS = 6,
 	BOT_NAV_EXPANSIONS_PER_TICK = 64,
+	BOT_SURFACE_WAIT_TICKS = 10 * TICKS_PER_SECOND,
 	BOT_BEHAVIOR_WORK_PER_TICK = 32,
 	BOT_INTENT_SCHEMA = 1,
+	/* a decision about every 267 ms: Halo Infinite's bots took a human's
+	200-250 ms to react to new information, which also made them better
+	practice partners */
+	BOT_DECISION_TICKS = 8,
+	/* the running behavior's bonus fades over a second */
+	BOT_HYSTERESIS_TICKS = TICKS_PER_SECOND,
+	BOT_SIGHTING_MEMORY_TICKS = 3 * TICKS_PER_SECOND,
+	BOT_WEAPON_SEEK_RANGE = 18,
+	BOT_VEHICLE_SEEK_RANGE = 35,
+	BOT_VEHICLE_PICKUP_RANGE = 60,
+	BOT_VEHICLE_PICKUP_SCAN_TICKS = TICKS_PER_SECOND,
 };
 
-/* the behavior tree's leaves */
+/* the behavior tree's leaves; a leaf's utility option is its id less one */
 enum
 {
-	_bot_leaf_retreat = 1,
+	_bot_leaf_none = 0,
+	_bot_leaf_retreat,
 	_bot_leaf_fight,
 	_bot_leaf_roam,
 	_bot_leaf_scavenge,
 	_bot_leaf_vehicle,
+	BOT_BEHAVIOR_COUNT = _bot_leaf_vehicle
+};
+
+/* how a bot knows its target */
+enum
+{
+	_bot_target_none = 0,
+	_bot_target_seen,
+	_bot_target_attacker, /* it has just hurt the bot */
+	_bot_target_remembered, /* seen a moment ago */
+	_bot_target_shared, /* a teammate's sighting (bot_manager.c) */
 };
 
 /* the intents the leaves emit, and the executor takes */
@@ -147,6 +184,7 @@ enum
 #define BOT_TARGET_MEMORY_SECONDS 4.f
 #define BOT_ATTACKER_AWARENESS_TICKS 15
 #define BOT_GRENADE_COOLDOWN_SECONDS 8.f
+#define BOT_VEHICLE_SEAT_MAXIMUM_SPEED_SQUARED 0.25f
 
 /* ---------- structures */
 
@@ -164,6 +202,38 @@ struct bot_skill
 	boolean strafes;
 	boolean throws_grenades;
 	boolean retreats;
+	boolean shares_sightings;
+};
+
+/* The utility tuning (docs/bot_decisions.md, "Scores"): fixed values,
+response curves, caps and the confidence's weights. Halo Infinite kept these
+in Lua so that a game mode could change them; a mode with different needs
+gets its own table. */
+struct bot_utility_tuning
+{
+	real vehicle;
+	real roam;
+	/* fight: by how the target is known, times distance, times confidence */
+	real fight_seen;
+	real fight_attacker;
+	real fight_remembered;
+	real fight_shared_cap;
+	engine_ai_utility_curve fight_distance;
+	engine_ai_utility_curve fight_confidence;
+	/* retreat: (1 - confidence) times the shields' response, capped */
+	engine_ai_utility_curve retreat_shields;
+	real retreat_cap;
+	/* scavenge: the find's value times distance; in reach during a fight, a
+	fixed value above fighting's */
+	real scavenge_weapon;
+	real scavenge_vehicle;
+	real scavenge_in_reach;
+	engine_ai_utility_curve scavenge_distance;
+	engine_ai_utility_curve scavenge_vehicle_distance;
+	/* confidence: own vitality, the target's lack of it, weapon against
+	weapon, teammates near against enemies seen */
+	float confidence_weights[4];
+	real teammate_radius;
 };
 
 struct bot_look_payload
@@ -214,6 +284,16 @@ struct bot
 	long target_first_seen_time;
 	long target_last_seen_time;
 	real_point3d target_last_position;
+	short target_source;
+	short visible_enemy_count;
+
+	/* decisions */
+	engine_ai_utility_selector selector;
+	uint32_t chosen_leaf;
+	boolean decide_now;
+	boolean abs_suppressed; /* a leaf facing what it must (a seat, a pickup) */
+	real confidence;
+	float scores[BOT_BEHAVIOR_COUNT];
 
 	/* combat */
 	real_euler_angles2d facing;
@@ -243,6 +323,14 @@ struct bot
 	long progress_time;
 	short stuck_count;
 	boolean jump_requested;
+	struct bot_navigation_agent navigation_agent;
+	long surface_nav_wait_time;
+	boolean surface_fallback_logged;
+	/* port: movement recovery is independent of behavior/path cancellation. */
+	long movement_check_time;
+	long movement_escape_until;
+	real_point3d movement_position;
+	real movement_escape_yaw;
 
 	/* Bounded opportunity search; handles are revalidated before use. */
 	long opportunity_index;
@@ -254,6 +342,9 @@ struct bot
 	long observed_vehicle_index;
 	long observed_weapons[MAXIMUM_WEAPONS_PER_UNIT];
 	long vehicle_progress_time;
+	long vehicle_callout_time;
+	long vehicle_pickup_scan_time;
+	long vehicle_pickup_player_index;
 	real_point3d vehicle_progress_position;
 
 	struct bot_pending_action pending;
@@ -272,15 +363,46 @@ struct bot_navigation
 
 static struct bot_skill const bot_skills[] =
 {
-	/* name, reaction, aim error, turn speed, sight, fov, tolerance, burst, pause, strafe, grenades, retreat */
-	{ "recruit", 0.9f, 7.f, 200.f, 20.f, 55.f, 10.f, 0.6f, 0.8f, FALSE, FALSE, FALSE },
-	{ "marine", 0.5f, 4.f, 320.f, 28.f, 65.f, 8.f, 1.0f, 0.5f, TRUE, TRUE, FALSE },
-	{ "odst", 0.3f, 2.5f, 450.f, 35.f, 75.f, 6.f, 1.5f, 0.3f, TRUE, TRUE, TRUE },
-	{ "spartan", 0.18f, 1.5f, 720.f, 45.f, 85.f, 5.f, 1.2f, 0.45f, TRUE, TRUE, TRUE },
+	/* name, reaction, aim error, turn speed, sight, fov, tolerance, burst, pause, strafe, grenades, retreat, share */
+	{ "recruit", 0.9f, 7.f, 200.f, 20.f, 55.f, 10.f, 0.6f, 0.8f, FALSE, FALSE, FALSE, FALSE },
+	{ "marine", 0.5f, 4.f, 320.f, 28.f, 65.f, 8.f, 1.0f, 0.5f, TRUE, TRUE, FALSE, FALSE },
+	{ "odst", 0.3f, 2.5f, 450.f, 35.f, 75.f, 6.f, 1.5f, 0.3f, TRUE, TRUE, TRUE, FALSE },
+	{ "spartan", 0.18f, 1.5f, 720.f, 45.f, 85.f, 5.f, 1.2f, 0.45f, TRUE, TRUE, TRUE, TRUE },
 };
 
-/* VEHICLE > RETREAT > SCAVENGE (safe/nearby) > FIGHT > ROAM: reevaluation
-lets an earlier one interrupt a later one that is running */
+/* Slayer's tuning. Patrol remains a meaningful fallback; a teammate's
+sighting is capped so a whole team does not abandon its lanes to one contact. */
+static struct bot_utility_tuning const bot_slayer_tuning =
+{
+	0.95f, /* vehicle */
+	0.15f, /* lane patrol */
+	0.9f, 0.85f, 0.55f, 0.28f, /* fight: seen, attacker, remembered, shared cap */
+	{ ENGINE_AI_UTILITY_LINEAR, 50.f, 0.f, 0.6f, 1.f, 0 }, /* fight distance: 50 m to 0 */
+	{ ENGINE_AI_UTILITY_LINEAR, 0.f, 1.f, 0.5f, 1.f, 0 }, /* fight confidence */
+	/* retreat: nothing above half shields, rising fast as they go */
+	{ ENGINE_AI_UTILITY_POWER, 0.5f, 0.f, 0.f, 1.f, 2 },
+	0.85f, /* retreat cap */
+	0.6f, 0.75f, 0.95f, /* scavenge: weapon, vehicle, in reach */
+	{ ENGINE_AI_UTILITY_LINEAR, 18.f, 0.f, 0.5f, 1.f, 0 }, /* weapon distance */
+	{ ENGINE_AI_UTILITY_LINEAR, 35.f, 0.f, 0.2f, 1.f, 0 }, /* vehicle/turret distance */
+	{ 3.f, 2.f, 1.f, 1.f }, /* confidence weights */
+	15.f, /* teammate radius */
+};
+
+static engine_ai_utility_selector_config const bot_selector_config =
+{
+	BOT_BEHAVIOR_COUNT,
+	BOT_DECISION_TICKS,
+	BOT_HYSTERESIS_TICKS,
+	0.15f, /* hysteresis bonus */
+	0.05f, /* switching margin */
+};
+
+static char const *const bot_leaf_names[] = { "none", "retreat", "fight", "roam", "scavenge", "vehicle" };
+
+/* The utility selector chooses; the tree only runs the chosen leaf (the
+others fail at once) and gives it an intent emitter. The order is the old
+priority order, which no longer matters. */
 static engine_ai_behavior_node const bot_behavior_nodes[] =
 {
 	{ ENGINE_AI_BEHAVIOR_PRIORITY, 1, 5, 0 },
@@ -303,6 +425,8 @@ static struct
 	boolean behavior_valid;
 	boolean had_bots;
 	boolean sandbox_done;
+	boolean log_decisions;
+	struct bot_utility_tuning const *tuning;
 	short desired_count;
 	struct bot_skill const *skill;
 	uint64_t epoch;
@@ -332,6 +456,9 @@ void bots_initialize_for_new_map(
 	csmemset(&bots_globals.navigation, 0, sizeof(bots_globals.navigation));
 	bots_globals.had_bots = FALSE;
 	bots_globals.sandbox_done = FALSE;
+	bots_globals.log_decisions = config_boolean("debug.bot_decisions") != 0;
+	bots_globals.tuning = &bot_slayer_tuning;
+	bot_manager_reset();
 	bots_globals.epoch++;
 	bots_globals.desired_count = (short)PIN(count, 0, BOTS_MAXIMUM);
 	bots_globals.skill = &bot_skills[1];
@@ -366,6 +493,7 @@ void bots_update(
 		return;
 	}
 	bots_join();
+	bot_manager_update();
 	for (bot_index = 0; bot_index < BOTS_MAXIMUM; bot_index++)
 	{
 		if (bots_globals.bots[bot_index].active)
@@ -815,6 +943,7 @@ static void bot_navigation_reset(
 	bot->following = FALSE;
 	bot->stuck_count = 0;
 	bot->progress_time = NONE;
+	bot_navigation_agent_reset_path(&bot->navigation_agent);
 }
 
 /* ---------- private code: perception */
@@ -855,7 +984,9 @@ static void bot_perceive(
 	real best_distance = 0.f;
 	real_point3d best_position;
 	short attacker_index;
+	boolean shares = bots_globals.skill->shares_sightings;
 
+	bot->visible_enemy_count = 0;
 	unit_get_camera_position(bot->unit_index, &eye);
 	data_iterator_new(&iterator, player_data);
 	while ((other = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
@@ -871,6 +1002,11 @@ static void bot_perceive(
 		bot_aim_point(other->unit_index, &point);
 		if (!bot_can_see(bot, bot->unit_index, &eye, &point))
 			continue;
+		bot->visible_enemy_count++;
+		/* (called out to the team, by skills that do) */
+		if (shares)
+			bot_manager_report_sighting(player->team_index, iterator.datum_index,
+				(short)(bot->slot + 1), &point);
 		distance = distance3d(&eye, &point);
 		/* (the current target is kept while it is seen) */
 		if (iterator.datum_index == bot->target_player_index)
@@ -909,6 +1045,7 @@ static void bot_perceive(
 			bot->target_player_index = attacker->player_index;
 			bot->target_last_seen_time = now;
 			bot->target_visible = FALSE;
+			bot->target_source = _bot_target_attacker;
 			break;
 		}
 	}
@@ -921,8 +1058,9 @@ static void bot_perceive(
 		bot->target_visible = TRUE;
 		bot->target_last_seen_time = now;
 		bot->target_last_position = best_position;
+		bot->target_source = _bot_target_seen;
 	}
-	else
+	else if (bot->target_source != _bot_target_attacker || bot->target_last_seen_time != now)
 	{
 		struct player_datum *target = bot->target_player_index != NONE ?
 			player_try_and_get(bot->target_player_index) : NULL;
@@ -933,6 +1071,36 @@ static void bot_perceive(
 			now - bot->target_last_seen_time > bot_seconds_to_ticks(BOT_TARGET_MEMORY_SECONDS))
 		{
 			bot->target_player_index = NONE;
+			bot->target_source = _bot_target_none;
+		}
+		else if (bot->target_source == _bot_target_seen)
+			bot->target_source = _bot_target_remembered;
+	}
+
+	/* (with nobody to fight, where a teammate last saw an enemy: every bot
+	reads the team's sightings, but only skills that share write them) */
+	if (bot->target_player_index == NONE || bot->target_source == _bot_target_shared)
+	{
+		real_point3d origin;
+		long shared_index;
+		real_point3d shared_position;
+
+		object_get_origin(bot->unit_index, &origin);
+		if (bot_manager_nearest_sighting(player->team_index, &origin, BOT_SIGHTING_MEMORY_TICKS,
+			&shared_index, &shared_position))
+		{
+			if (shared_index != bot->target_player_index)
+				bot->target_first_seen_time = now;
+			bot->target_player_index = shared_index;
+			bot->target_visible = FALSE;
+			bot->target_last_seen_time = now;
+			bot->target_last_position = shared_position;
+			bot->target_source = _bot_target_shared;
+		}
+		else if (bot->target_source == _bot_target_shared)
+		{
+			bot->target_player_index = NONE;
+			bot->target_source = _bot_target_none;
 		}
 	}
 }
@@ -1039,6 +1207,9 @@ static engine_ai_behavior_result bot_leaf_fight(
 	real_point3d origin;
 	real distance;
 	real toward;
+	struct sn_point goal;
+	struct bot_navigation_command command;
+	enum bot_navigation_result navigation_result;
 
 	if (bot->target_player_index == NONE)
 		return ENGINE_AI_BEHAVIOR_FAILURE;
@@ -1048,12 +1219,21 @@ static engine_ai_behavior_result bot_leaf_fight(
 
 	distance = bot_horizontal_distance(&origin, &bot->target_last_position);
 	toward = bot_yaw_to(&origin, &bot->target_last_position);
-	if (!bot->target_visible)
+	if (!bot->target_visible || distance > 10.f)
 	{
-		/* (where it was last seen) */
-		bot_emit_move(emitter, toward, 1.f);
+		/* Pursuit uses the BSP route too; no direct steering through walls. */
+		goal.x = bot->target_last_position.x;
+		goal.y = bot->target_last_position.y;
+		goal.z = bot->target_last_position.z;
+		navigation_result = bot_navigation_agent_move_to(&bot->navigation_agent,
+			bot->unit_index, goal, 1.f, 1.f, &command);
+		if (navigation_result == BOT_NAVIGATION_MOVING && command.has_move)
+			bot_emit_move(emitter, command.yaw, command.speed);
+		else if (navigation_result == BOT_NAVIGATION_UNAVAILABLE)
+			bot_emit_move(emitter, toward, 1.f);
 		return ENGINE_AI_BEHAVIOR_RUNNING;
 	}
+	bot_navigation_agent_reset_path(&bot->navigation_agent);
 	if (skill->strafes && now >= bot->strafe_change_time)
 	{
 		bot->strafe_sign = bot_random(bot) < 0.5f ? -1.f : 1.f;
@@ -1071,16 +1251,6 @@ static engine_ai_behavior_result bot_leaf_fight(
 	return ENGINE_AI_BEHAVIOR_RUNNING;
 }
 
-static boolean bot_should_retreat(
-	struct bot const *bot)
-{
-	struct unit_datum *unit = bot_living_unit(bot->unit_index);
-
-	return bots_globals.skill->retreats && unit && bot->target_player_index != NONE &&
-		game_time_get() >= bot->retreat_cooldown_time &&
-		unit->object.shield_vitality < 0.25f && unit->object.body_vitality < 0.75f;
-}
-
 /* back away from the threat, still shooting, until the shields come back */
 static engine_ai_behavior_result bot_leaf_retreat(
 	struct bot *bot,
@@ -1094,9 +1264,7 @@ static engine_ai_behavior_result bot_leaf_retreat(
 
 	if (!unit || bot->target_player_index == NONE)
 		return ENGINE_AI_BEHAVIOR_FAILURE;
-	/* (the root tries it first every time: not unless it is needed) */
-	if (bot->retreat_start_time == NONE && !bot_should_retreat(bot))
-		return ENGINE_AI_BEHAVIOR_FAILURE;
+	/* (the selector chose it; it ends itself once the shields are back) */
 	if (bot->retreat_start_time == NONE)
 		bot->retreat_start_time = now;
 	if (unit->object.shield_vitality > 0.9f || now - bot->retreat_start_time > bot_seconds_to_ticks(5.f))
@@ -1189,8 +1357,10 @@ static short bot_vehicle_seat(struct bot *bot, long vehicle_index)
 	short best_priority = 0;
 
 	if (!vehicle || TEST_FLAG(vehicle->object.damage_flags, _object_dead_bit) ||
-		vehicle->object.up.k < 0.6f || !vehicle_supports_bot_driver(vehicle_index) ||
-		magnitude_squared3d(&vehicle->object.translational_velocity) > 0.01f)
+		vehicle->object.up.k < 0.6f ||
+		(!vehicle_supports_bot_driver(vehicle_index) && !vehicle_is_fixed_turret(vehicle_index)) ||
+		magnitude_squared3d(&vehicle->object.translational_velocity) >
+			BOT_VEHICLE_SEAT_MAXIMUM_SPEED_SQUARED)
 		return NONE;
 	definition = unit_definition_get(vehicle->definition_index);
 	for (seat_index = 0; seat_index < MIN(definition->unit.seats.count, 16); seat_index++)
@@ -1199,7 +1369,8 @@ static short bot_vehicle_seat(struct bot *bot, long vehicle_index)
 		long occupant = NONE;
 		short priority = TEST_FLAG(seat->flags, _unit_seat_driver_bit) ? 2 :
 			(TEST_FLAG(seat->flags, _unit_seat_gunner_bit) ? 3 : 1);
-		if (!TEST_FLAG(seat->flags, _unit_seat_driver_bit) && vehicle->unit.driver_object_index == NONE)
+		if (!TEST_FLAG(seat->flags, _unit_seat_driver_bit) &&
+			vehicle->unit.driver_object_index == NONE && vehicle_supports_bot_driver(vehicle_index))
 			continue;
 		if (priority > best_priority && unit_can_enter_seat(bot->unit_index, vehicle_index, seat_index, &occupant))
 		{
@@ -1208,6 +1379,87 @@ static short bot_vehicle_seat(struct bot *bot, long vehicle_index)
 		}
 	}
 	return best;
+}
+
+/* A driver without an enemy to pursue heads for the nearest teammate who
+   can use an empty non-driver seat. Stopping within eight metres lets the
+   teammate's normal seat-entry logic take over. */
+static boolean bot_vehicle_pickup_teammate(
+	struct bot *bot,
+	long vehicle_index,
+	real_point3d *position,
+	long *teammate_player_index)
+{
+	struct player_datum *player = bot_player(bot);
+	struct unit_datum *vehicle = vehicle_try_and_get(vehicle_index);
+	struct unit_definition *definition;
+	struct data_iterator iterator;
+	struct player_datum *teammate;
+	real best_distance = (real)BOT_VEHICLE_PICKUP_RANGE;
+	long now = game_time_get();
+	boolean found = FALSE;
+
+	if (!player || !vehicle || !game_engine_has_teams() || !position || !teammate_player_index)
+		return FALSE;
+	if (now < bot->vehicle_pickup_scan_time)
+	{
+		teammate = bot->vehicle_pickup_player_index != NONE ?
+			player_try_and_get(bot->vehicle_pickup_player_index) : NULL;
+		if (teammate && teammate->team_index == player->team_index)
+		{
+			struct unit_datum *teammate_unit = bot_living_unit(teammate->unit_index);
+			if (teammate_unit && teammate_unit->object.parent_object_index == NONE &&
+				distance3d(&vehicle->object.position, &teammate_unit->object.position) <
+					(real)BOT_VEHICLE_PICKUP_RANGE)
+			{
+				*position = teammate_unit->object.position;
+				*teammate_player_index = bot->vehicle_pickup_player_index;
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
+	bot->vehicle_pickup_scan_time = now + BOT_VEHICLE_PICKUP_SCAN_TICKS + bot->slot;
+	bot->vehicle_pickup_player_index = NONE;
+	definition = unit_definition_get(vehicle->definition_index);
+	data_iterator_new(&iterator, player_data);
+	while ((teammate = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		struct unit_datum *teammate_unit;
+		real distance;
+		short seat_index;
+		boolean has_open_seat = FALSE;
+
+		if (iterator.datum_index == bot->player_index || teammate->team_index != player->team_index)
+			continue;
+		teammate_unit = bot_living_unit(teammate->unit_index);
+		if (!teammate_unit || teammate_unit->object.parent_object_index != NONE)
+			continue;
+		distance = distance3d(&vehicle->object.position, &teammate_unit->object.position);
+		if (distance >= best_distance)
+			continue;
+		for (seat_index = 0; seat_index < MIN(definition->unit.seats.count, 16); seat_index++)
+		{
+			struct unit_seat *seat = TAG_BLOCK_GET_ELEMENT(
+				&definition->unit.seats, seat_index, struct unit_seat);
+			long occupant = NONE;
+
+			if (!TEST_FLAG(seat->flags, _unit_seat_driver_bit) &&
+				unit_can_enter_seat(teammate->unit_index, vehicle_index, seat_index, &occupant))
+			{
+				has_open_seat = TRUE;
+				break;
+			}
+		}
+		if (!has_open_seat)
+			continue;
+		best_distance = distance;
+		*position = teammate_unit->object.position;
+		*teammate_player_index = iterator.datum_index;
+		bot->vehicle_pickup_player_index = iterator.datum_index;
+		found = TRUE;
+	}
+	return found;
 }
 
 static void bot_observe_inventory(struct bot *bot, struct unit_datum const *unit)
@@ -1233,6 +1485,9 @@ static void bot_observe_inventory(struct bot *bot, struct unit_datum const *unit
 			(short)unit->unit.parent_seat_index);
 		bot->observed_vehicle_index = vehicle_index;
 		bot->vehicle_progress_time = NONE;
+		bot->vehicle_callout_time = NONE;
+		bot->vehicle_pickup_scan_time = NONE;
+		bot->vehicle_pickup_player_index = NONE;
 		bot->goal_node = ENGINE_AI_NAV_NODES_MAX;
 		bot->opportunity_index = NONE;
 	}
@@ -1250,8 +1505,9 @@ static boolean bot_friendly_driver(struct bot *bot, long vehicle_index)
 		player_get(driver->unit.player_index)->team_index == bot_player(bot)->team_index;
 }
 
-/* Scan once a second, staggered by slot. Geometry work is limited to the
-   best candidates inside 18 world units; no knowledge of hidden pickups. */
+/* Scan once a second, staggered by slot. Nearby weapons and empty vehicle or
+   turret seats are chosen from visible world objects; BSP routes decide if a
+   wall or other obstacle makes them unreachable. */
 static void bot_find_opportunity(struct bot *bot)
 {
 	struct object_iterator iterator;
@@ -1277,7 +1533,8 @@ static void bot_find_opportunity(struct bot *bot)
 
 		object_get_origin(iterator.index, &point);
 		distance = distance3d(&origin, &point);
-		if (distance > 18.f || object->object.parent_object_index != NONE)
+		if (distance > (is_vehicle ? (real)BOT_VEHICLE_SEEK_RANGE : (real)BOT_WEAPON_SEEK_RANGE) ||
+			object->object.parent_object_index != NONE)
 			continue;
 		if (bot->target_visible && !(is_vehicle && distance < 8.f &&
 			bot_friendly_driver(bot, iterator.index)) && (is_vehicle || distance > 3.f))
@@ -1291,14 +1548,14 @@ static void bot_find_opportunity(struct bot *bot)
 		}
 		else if (!bot_wants_weapon(bot, iterator.index))
 			continue;
-		score = (is_vehicle ? 3.f : 4.f) / (1.f + distance);
-		if (score <= best_score || !bot_navigation_walkable(&origin, &point))
+		score = (is_vehicle ? 20.f : 4.f) / (1.f + distance);
+		if (score <= best_score)
 			continue;
 		best_score = score;
 		bot->opportunity_index = iterator.index;
 		bot->opportunity_vehicle = is_vehicle;
 		bot->opportunity_seat = seat;
-		bot->opportunity_end_time = game_time_get() + bot_seconds_to_ticks(8.f);
+		bot->opportunity_end_time = game_time_get() + bot_seconds_to_ticks(is_vehicle ? 35.f : 8.f);
 	}
 	if (bot->opportunity_index != NONE)
 		platform_log("bots: bot %d seeking %s %ld", bot->slot + 1,
@@ -1328,7 +1585,9 @@ static engine_ai_behavior_result bot_leaf_scavenge(struct bot *bot,
 	struct object_datum *object = object_try_and_get(bot->opportunity_index);
 	real_point3d origin;
 	real_point3d point;
-	real_euler_angles2d look;
+	struct sn_point nav_goal;
+	struct bot_navigation_command command;
+	enum bot_navigation_result navigation_result;
 	long now = game_time_get();
 
 	if (bot->opportunity_index == NONE)
@@ -1351,12 +1610,24 @@ static engine_ai_behavior_result bot_leaf_scavenge(struct bot *bot,
 		object_get_origin(bot->opportunity_index, &point);
 	}
 	object_get_origin(bot->unit_index, &origin);
-	look = bot_angles_to(&origin, &point);
-	look.pitch = 0.f;
-	bot_emit_look(emitter, &look);
-	/* Stop for seat entry: Halo requires a nearly stationary biped. */
-	if (bot_horizontal_distance(&origin, &point) > 0.6f)
-		bot_emit_move(emitter, look.yaw, bot_horizontal_distance(&origin, &point) < 2.f ? 0.35f : 1.f);
+	/* (in reach, it faces the find, not the enemy) */
+	bot->abs_suppressed = bot_horizontal_distance(&origin, &point) < 2.5f;
+	nav_goal.x = point.x;
+	nav_goal.y = point.y;
+	nav_goal.z = point.z;
+	navigation_result = bot_navigation_agent_move_to(&bot->navigation_agent,
+		bot->unit_index, nav_goal, bot_horizontal_distance(&origin, &point) < 2.f ? 0.35f : 1.f,
+		0.6f, &command);
+	if (navigation_result == BOT_NAVIGATION_FAILED)
+		goto abandon;
+	if (navigation_result == BOT_NAVIGATION_MOVING && command.has_move)
+	{
+		real_euler_angles2d look;
+		look.yaw = command.yaw;
+		look.pitch = 0.f;
+		bot_emit_look(emitter, &look);
+		bot_emit_move(emitter, command.yaw, command.speed);
+	}
 	if (player->action_object_index == bot->opportunity_index && now >= bot->interaction_time)
 	{
 		bot->interaction_time = now + TICKS_PER_SECOND;
@@ -1397,9 +1668,14 @@ static engine_ai_behavior_result bot_leaf_vehicle(struct bot *bot,
 	{
 		real_point3d goal;
 		real_euler_angles2d look;
+		long teammate_player_index = NONE;
+		boolean pickup_teammate = FALSE;
 
 		if (bot->target_player_index != NONE)
 			goal = bot->target_last_position;
+		else if (bot_vehicle_pickup_teammate(bot, unit->object.parent_object_index,
+			&goal, &teammate_player_index))
+			pickup_teammate = TRUE;
 		else
 		{
 			struct engine_ai_nav_graph const *graph = bot_navigation_graph();
@@ -1418,6 +1694,13 @@ static engine_ai_behavior_result bot_leaf_vehicle(struct bot *bot,
 		drive_wanted = bot_horizontal_distance(&vehicle->object.position, &goal) > 8.f;
 		if (drive_wanted)
 			bot_emit_move(emitter, look.yaw, 0.5f);
+		else if (pickup_teammate && (bot->vehicle_callout_time == NONE ||
+			now - bot->vehicle_callout_time >= bot_seconds_to_ticks(20.f)))
+		{
+			platform_log("bots: bot %d stopped for teammate %ld; vehicle seat open",
+				bot->slot + 1, (long)DATUM_INDEX_TO_ABSOLUTE_INDEX(teammate_player_index));
+			bot->vehicle_callout_time = now;
+		}
 	}
 	if (bot->vehicle_progress_time == NONE)
 	{
@@ -1428,7 +1711,9 @@ static engine_ai_behavior_result bot_leaf_vehicle(struct bot *bot,
 	{
 		if (vehicle->object.up.k < 0.5f || (drive_wanted &&
 			distance3d(&vehicle->object.position, &bot->vehicle_progress_position) < 1.f) ||
-			(!TEST_FLAG(seat->flags, _unit_seat_driver_bit) && vehicle->unit.driver_object_index == NONE))
+			(!TEST_FLAG(seat->flags, _unit_seat_driver_bit) &&
+			vehicle_supports_bot_driver(unit->object.parent_object_index) &&
+			vehicle->unit.driver_object_index == NONE))
 			engine_ai_behavior_intent_emit(emitter, _bot_intent_exit_vehicle, BOT_INTENT_SCHEMA, NULL, 0);
 		bot->vehicle_progress_time = now;
 		bot->vehicle_progress_position = vehicle->object.position;
@@ -1488,7 +1773,7 @@ static struct engine_ai_traversal_callbacks const bot_traversal_callbacks =
 
 /* walk the graph to a random far node; SUCCESS on arrival (the root then
 picks another) */
-static engine_ai_behavior_result bot_leaf_roam(
+static engine_ai_behavior_result bot_leaf_roam_spawn_graph(
 	struct bot *bot,
 	struct engine_ai_behavior_intent_emitter *emitter)
 {
@@ -1618,6 +1903,52 @@ static engine_ai_behavior_result bot_leaf_roam(
 	return ENGINE_AI_BEHAVIOR_RUNNING;
 }
 
+static engine_ai_behavior_result bot_leaf_roam(
+	struct bot *bot,
+	struct engine_ai_behavior_intent_emitter *emitter)
+{
+	struct bot_navigation_command command;
+	enum bot_navigation_result navigation_result;
+	long now = game_time_get();
+
+	if (bot->surface_fallback_logged && navigation_world_resource())
+	{
+		bot_navigation_reset(bot);
+		bot->surface_fallback_logged = FALSE;
+	}
+	navigation_result = bot_navigation_agent_roam(&bot->navigation_agent, bot->unit_index,
+		&bot->rng, &command);
+	if (navigation_result == BOT_NAVIGATION_UNAVAILABLE)
+	{
+		if (bot->surface_nav_wait_time == NONE)
+			bot->surface_nav_wait_time = now;
+		if (now - bot->surface_nav_wait_time < BOT_SURFACE_WAIT_TICKS)
+			return ENGINE_AI_BEHAVIOR_RUNNING;
+		if (!bot->surface_fallback_logged)
+		{
+			platform_log("bots: bot %d BSP navigation unavailable; using start graph fallback",
+				bot->slot + 1);
+			bot->surface_fallback_logged = TRUE;
+		}
+		return bot_leaf_roam_spawn_graph(bot, emitter);
+	}
+
+	bot->surface_nav_wait_time = NONE;
+	if (navigation_result == BOT_NAVIGATION_FAILED)
+		return ENGINE_AI_BEHAVIOR_FAILURE;
+	if (navigation_result == BOT_NAVIGATION_ARRIVED)
+		return ENGINE_AI_BEHAVIOR_SUCCESS;
+	if (navigation_result == BOT_NAVIGATION_MOVING && command.has_move)
+	{
+		real_euler_angles2d look;
+		look.yaw = command.yaw;
+		look.pitch = 0.f;
+		bot_emit_look(emitter, &look);
+		bot_emit_move(emitter, command.yaw, command.speed);
+	}
+	return ENGINE_AI_BEHAVIOR_RUNNING;
+}
+
 static engine_ai_behavior_result bot_behavior_tick(
 	void *context,
 	uint32_t node,
@@ -1625,16 +1956,32 @@ static engine_ai_behavior_result bot_behavior_tick(
 	struct engine_ai_behavior_intent_emitter *emitter)
 {
 	struct bot *bot = (struct bot *)context;
+	engine_ai_behavior_result result;
+	real_point3d eye;
 
+	/* (only the selector's choice runs) */
+	if (leaf_id != bot->chosen_leaf)
+		return ENGINE_AI_BEHAVIOR_FAILURE;
 	switch (leaf_id)
 	{
-	case _bot_leaf_retreat: return bot_leaf_retreat(bot, emitter);
-	case _bot_leaf_fight: return bot_leaf_fight(bot, emitter);
-	case _bot_leaf_roam: return bot_leaf_roam(bot, emitter);
-	case _bot_leaf_scavenge: return bot_leaf_scavenge(bot, emitter);
-	case _bot_leaf_vehicle: return bot_leaf_vehicle(bot, emitter);
+	case _bot_leaf_retreat: result = bot_leaf_retreat(bot, emitter); break;
+	case _bot_leaf_fight: result = bot_leaf_fight(bot, emitter); break;
+	case _bot_leaf_roam: result = bot_leaf_roam(bot, emitter); break;
+	case _bot_leaf_scavenge: result = bot_leaf_scavenge(bot, emitter); break;
+	case _bot_leaf_vehicle: result = bot_leaf_vehicle(bot, emitter); break;
+	default: return ENGINE_AI_BEHAVIOR_ERROR;
 	}
-	return ENGINE_AI_BEHAVIOR_ERROR;
+
+	/* Always Be Shooting: a bot doing anything else still aims and fires at
+	an enemy it sees. Its move is the behavior's, in world space, so it walks
+	to its goal while it shoots. (Fight, retreat and vehicle engage already.) */
+	if (result == ENGINE_AI_BEHAVIOR_RUNNING && bot->target_visible && !bot->abs_suppressed &&
+		leaf_id != _bot_leaf_fight && leaf_id != _bot_leaf_retreat && leaf_id != _bot_leaf_vehicle)
+	{
+		unit_get_camera_position(bot->unit_index, &eye);
+		bot_engage(bot, &eye, emitter);
+	}
+	return result;
 }
 
 static void bot_behavior_cancel(
@@ -1644,37 +1991,195 @@ static void bot_behavior_cancel(
 {
 	struct bot *bot = (struct bot *)context;
 
-	switch (leaf_id)
-	{
-	case _bot_leaf_retreat:
+	if (leaf_id == _bot_leaf_roam && bot->following)
+		engine_ai_traversal_cancel(&bot->traversal, &bot_traversal_callbacks, bot);
+	bot_navigation_reset(bot);
+	if (leaf_id == _bot_leaf_retreat)
 		bot->retreat_start_time = NONE;
-		break;
-	case _bot_leaf_roam:
-		if (bot->following)
-			engine_ai_traversal_cancel(&bot->traversal, &bot_traversal_callbacks, bot);
-		bot_navigation_reset(bot);
-		break;
-	}
 }
 
-/* (side-effect free: whether the subtree could run now) */
+/* (side-effect free and cheap: whether the leaf could run now; between
+decisions, a running leaf that cannot is replaced at once) */
+static boolean bot_leaf_viable(
+	struct bot *bot,
+	uint32_t leaf_id)
+{
+	struct unit_datum *unit = bot_living_unit(bot->unit_index);
+	boolean seated = unit && unit->object.parent_object_index != NONE;
+
+	if (!unit)
+		return FALSE;
+	switch (leaf_id)
+	{
+	case _bot_leaf_vehicle: return seated;
+	case _bot_leaf_scavenge: return !seated && bot->opportunity_index != NONE && bot_opportunity_relevant(bot);
+	case _bot_leaf_retreat: return !seated && bot->target_player_index != NONE;
+	case _bot_leaf_fight: return !seated && bot->target_player_index != NONE;
+	case _bot_leaf_roam: return !seated;
+	}
+	return FALSE;
+}
+
 static bool bot_behavior_relevant(
 	void *context,
 	uint32_t node)
 {
-	struct bot *bot = (struct bot *)context;
+	return node < NUMBEROF(bot_behavior_nodes) &&
+		bot_leaf_viable((struct bot *)context, bot_behavior_nodes[node].leaf_id);
+}
 
-	switch (bot_behavior_nodes[node].leaf_id)
+/* ---------- private code: utility */
+
+/* shields count double, as a player reads a fight; 0 to 1 */
+static real bot_unit_vitality(
+	struct unit_datum const *unit)
+{
+	real shield = PIN(unit->object.shield_vitality, 0.f, 1.f);
+	real body = PIN(unit->object.body_vitality, 0.f, 1.f);
+
+	return (2.f * shield + body) / 3.f;
+}
+
+static real bot_unit_weapon_utility(
+	struct unit_datum const *unit)
+{
+	short slot = unit->unit.current_weapon_index;
+
+	if (slot < 0 || slot >= MAXIMUM_WEAPONS_PER_UNIT)
+		return 0.f;
+	return bot_weapon_utility(unit->unit.weapon_object_indices[slot]);
+}
+
+/* How sure the bot is of winning a fight now, 0 to 1 (Halo Infinite's
+confidence): its vitality against its target's, weapon against weapon,
+teammates near against enemies in sight. The target's vitality is what a
+player reads from its shields' flare and how it took its last hits. */
+static real bot_confidence(
+	struct bot *bot,
+	struct player_datum const *player,
+	struct unit_datum const *unit)
+{
+	struct bot_utility_tuning const *tuning = bots_globals.tuning;
+	struct player_datum *target = bot->target_player_index != NONE ?
+		player_try_and_get(bot->target_player_index) : NULL;
+	struct unit_datum *target_unit = target ? bot_living_unit(target->unit_index) : NULL;
+	float inputs[4];
+	real own_weapon = bot_unit_weapon_utility(unit);
+	real enemies = (real)MAX(bot->visible_enemy_count, target_unit ? 1 : 0);
+	real teammates = 0.f;
+
+	inputs[0] = bot_unit_vitality(unit);
+	inputs[1] = target_unit ? 1.f - bot_unit_vitality(target_unit) : 0.5f;
+	if (target_unit && own_weapon + bot_unit_weapon_utility(target_unit) > 0.f)
+		inputs[2] = own_weapon / (own_weapon + bot_unit_weapon_utility(target_unit));
+	else
+		inputs[2] = own_weapon > 0.f ? 0.5f : 0.f;
+	if (game_engine_has_teams())
 	{
-	case _bot_leaf_vehicle:
-		return bot_living_unit(bot->unit_index) &&
-			bot_living_unit(bot->unit_index)->object.parent_object_index != NONE;
-	case _bot_leaf_scavenge: return bot_opportunity_relevant(bot);
-	case _bot_leaf_retreat: return bot_should_retreat(bot);
-	case _bot_leaf_fight: return bot->target_player_index != NONE;
-	case _bot_leaf_roam: return true;
+		struct data_iterator iterator;
+		struct player_datum *other;
+
+		data_iterator_new(&iterator, player_data);
+		while ((other = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+		{
+			struct unit_datum *other_unit;
+
+			if (iterator.datum_index == bot->player_index || other->team_index != player->team_index)
+				continue;
+			other_unit = bot_living_unit(other->unit_index);
+			if (other_unit && distance3d(&other_unit->object.position, &unit->object.position) < tuning->teammate_radius)
+				teammates += 1.f;
+		}
 	}
-	return false;
+	inputs[3] = (teammates + 1.f) / (teammates + 1.f + enemies);
+	return engine_ai_utility_weighted(inputs, tuning->confidence_weights, 4);
+}
+
+/* every behavior's score, 0 to 1 (docs/bot_decisions.md, "Scores"); zero
+for one that cannot run */
+static void bot_score_behaviors(
+	struct bot *bot,
+	struct player_datum const *player,
+	struct unit_datum const *unit)
+{
+	struct bot_utility_tuning const *tuning = bots_globals.tuning;
+	long now = game_time_get();
+	real confidence = bot_confidence(bot, player, unit);
+	short leaf;
+
+	bot->confidence = confidence;
+	for (leaf = 0; leaf < BOT_BEHAVIOR_COUNT; leaf++)
+		bot->scores[leaf] = 0.f;
+
+	/* (seated: the vehicle leaf drives, guns or rides, and gets out) */
+	if (unit->object.parent_object_index != NONE)
+	{
+		bot->scores[_bot_leaf_vehicle - 1] = tuning->vehicle;
+		return;
+	}
+
+	bot->scores[_bot_leaf_roam - 1] = tuning->roam;
+
+	if (bot->target_player_index != NONE)
+	{
+		real known;
+		real fight;
+		real_point3d origin;
+
+		switch (bot->target_source)
+		{
+		case _bot_target_seen: known = tuning->fight_seen; break;
+		case _bot_target_attacker: known = tuning->fight_attacker; break;
+		case _bot_target_remembered: known = tuning->fight_remembered; break;
+		default: known = tuning->fight_shared_cap; break;
+		}
+		object_get_origin(bot->unit_index, &origin);
+		fight = known *
+			engine_ai_utility_curve_evaluate(&tuning->fight_distance, distance3d(&origin, &bot->target_last_position)) *
+			engine_ai_utility_curve_evaluate(&tuning->fight_confidence, confidence);
+		/* (a teammate's callout is worth a look, never more than the cap) */
+		if (bot->target_source == _bot_target_shared)
+			fight = MIN(fight, tuning->fight_shared_cap);
+		bot->scores[_bot_leaf_fight - 1] = (float)fight;
+
+		/* (a bot that knows its target can fall back; as its shields come back
+		and its confidence with them, fight overtakes it, or the leaf ends it
+		and a cooldown starts) */
+		if (bots_globals.skill->retreats && bot->target_source != _bot_target_shared &&
+			now >= bot->retreat_cooldown_time)
+		{
+			bot->scores[_bot_leaf_retreat - 1] = (float)MIN(tuning->retreat_cap, (1.f - confidence) *
+				engine_ai_utility_curve_evaluate(&tuning->retreat_shields, unit->object.shield_vitality));
+		}
+	}
+
+	if (bot->opportunity_index != NONE && bot_opportunity_relevant(bot))
+	{
+		real_point3d origin;
+		real_point3d point;
+		real distance;
+
+		object_get_origin(bot->unit_index, &origin);
+		if (bot->opportunity_vehicle)
+		{
+			if (!unit_get_seat_entrance_point(bot->unit_index, bot->opportunity_index,
+				bot->opportunity_seat, &point, NULL, NULL))
+				return;
+		}
+		else
+			object_get_origin(bot->opportunity_index, &point);
+		distance = distance3d(&origin, &point);
+		/* Keep the score stable when an enemy leaves and re-enters view. Near
+		the pickup, commit to it whether or not the enemy is currently visible;
+		ABS still fights independently. */
+		if (bot_horizontal_distance(&origin, &point) < 2.5f)
+			bot->scores[_bot_leaf_scavenge - 1] = tuning->scavenge_in_reach;
+		else
+			bot->scores[_bot_leaf_scavenge - 1] = (float)(
+				(bot->opportunity_vehicle ? tuning->scavenge_vehicle : tuning->scavenge_weapon) *
+				engine_ai_utility_curve_evaluate(bot->opportunity_vehicle ?
+					&tuning->scavenge_vehicle_distance : &tuning->scavenge_distance, distance));
+	}
 }
 
 static engine_ai_behavior_result bot_behavior_tick_plain(
@@ -1964,6 +2469,45 @@ static void bot_control_weapon(struct bot *bot, struct player_action *action)
 	}
 }
 
+/* port: always submit on-foot movement, including while a route search waits
+or a leaf fails. Physics still owns collision; stalled movement changes direction
+and requests a jump instead of retrying the same blocked heading forever. */
+static void bot_keep_moving(
+	struct bot *bot)
+{
+	struct unit_datum *unit = bot_living_unit(bot->unit_index);
+	real_point3d origin;
+	long now = game_time_get();
+
+	if (!unit || unit->object.parent_object_index != NONE)
+		return;
+	object_get_origin(bot->unit_index, &origin);
+	if (bot->movement_check_time == NONE)
+	{
+		bot->movement_check_time = now;
+		bot->movement_position = origin;
+	}
+	else if (now - bot->movement_check_time >= TICKS_PER_SECOND)
+	{
+		if (bot_horizontal_distance(&origin, &bot->movement_position) < 0.5f)
+		{
+			bot->movement_escape_yaw = bot_angle_normalize(bot->movement_escape_yaw +
+				(real)M_PI * 0.75f);
+			bot->movement_escape_until = now + TICKS_PER_SECOND;
+			SET_FLAG(bot->pending.control_flags, _unit_control_jump_bit, TRUE);
+		}
+		bot->movement_check_time = now;
+		bot->movement_position = origin;
+	}
+	if (now < bot->movement_escape_until || !bot->pending.has_move ||
+		bot->pending.move_speed <= 0.f)
+	{
+		bot->pending.has_move = TRUE;
+		bot->pending.move_yaw = bot->movement_escape_yaw;
+		bot->pending.move_speed = 1.f;
+	}
+}
+
 /* the accepted intents as the player's action: the facing turned toward the
 look at this skill's speed, and the movement relative to it */
 static void bot_submit_action(
@@ -1972,6 +2516,7 @@ static void bot_submit_action(
 	struct player_action action;
 	real turn = DEGREES_TO_RADIANS(bots_globals.skill->turn_degrees_per_second) / TICKS_PER_SECOND;
 
+	bot_keep_moving(bot);
 	if (bot->pending.has_look)
 	{
 		real yaw_delta = bot_angle_normalize(bot->pending.look.yaw - bot->facing.yaw);
@@ -2018,6 +2563,16 @@ static void bot_reset_life(
 	bot->unit_index = unit_index;
 	bot->target_player_index = NONE;
 	bot->target_visible = FALSE;
+	bot->target_source = _bot_target_none;
+	bot->visible_enemy_count = 0;
+	bot->surface_nav_wait_time = NONE;
+	bot->surface_fallback_logged = FALSE;
+	/* (nothing chosen: the first tick of the life decides) */
+	engine_ai_utility_selector_init(&bot->selector, (uint64_t)game_time_get());
+	bot->chosen_leaf = _bot_leaf_none;
+	bot->decide_now = FALSE;
+	bot->abs_suppressed = FALSE;
+	bot->confidence = 0.f;
 	bot->aim_error_time = 0;
 	bot->strafe_change_time = 0;
 	bot->burst_change_time = 0;
@@ -2038,9 +2593,15 @@ static void bot_reset_life(
 	bot->observed_vehicle_index = NONE;
 	bot->observed_weapons[0] = bot->observed_weapons[1] = NONE;
 	bot->vehicle_progress_time = NONE;
+	bot->vehicle_callout_time = NONE;
+	bot->vehicle_pickup_scan_time = NONE;
+	bot->vehicle_pickup_player_index = NONE;
 	bot_navigation_reset(bot);
 	if (unit)
 		euler_angles2d_from_vector3d(&bot->facing, &unit->unit.desired_aiming_vector);
+	bot->movement_check_time = NONE;
+	bot->movement_escape_until = 0;
+	bot->movement_escape_yaw = bot->facing.yaw;
 }
 
 /* Find a parked, empty ground vehicle with a driver and gunner seat. This
@@ -2142,6 +2703,64 @@ static void bot_debug_sandbox(struct bot *bot)
 		vehicle_index, gunner);
 }
 
+/* Every behavior scored and the best chosen, at the decision cadence, or at
+once when the running leaf can no longer run or has finished. Between
+decisions the running leaf continues: a bot reacts as a person does, after a
+moment, not every tick. */
+static void bot_decide(
+	struct bot *bot,
+	struct player_datum const *player,
+	struct unit_datum const *unit)
+{
+	long now = game_time_get();
+	boolean first = bot->chosen_leaf == _bot_leaf_none;
+	boolean force = bot->decide_now || (!first && !bot_leaf_viable(bot, bot->chosen_leaf));
+	uint32_t chosen = ENGINE_AI_UTILITY_NONE;
+	uint32_t leaf;
+	engine_ai_utility_decision decision;
+
+	if (!force && !first && (uint64_t)now < bot->selector.next_decision_tick)
+		return;
+	bot->decide_now = FALSE;
+	bot_score_behaviors(bot, player, unit);
+	decision = engine_ai_utility_select(&bot->selector, &bot_selector_config, bot->scores,
+		(uint64_t)now, force, &chosen);
+	if (decision == ENGINE_AI_UTILITY_INVALID)
+		return;
+	/* (bots that spawn together decide on different ticks from then on) */
+	if (first)
+		bot->selector.next_decision_tick += (uint64_t)(bot->slot % BOT_DECISION_TICKS);
+	leaf = chosen < BOT_BEHAVIOR_COUNT ? chosen + 1 : _bot_leaf_none;
+	if (leaf == bot->chosen_leaf)
+		return;
+
+	if (bots_globals.log_decisions)
+	{
+		platform_log("bots: bot %d tick %ld %s -> %s (conf %.2f) retreat %.2f fight %.2f roam %.2f scavenge %.2f vehicle %.2f, target %s",
+			bot->slot + 1, game_time_get(), bot_leaf_names[bot->chosen_leaf], bot_leaf_names[leaf], bot->confidence,
+			bot->scores[_bot_leaf_retreat - 1], bot->scores[_bot_leaf_fight - 1], bot->scores[_bot_leaf_roam - 1],
+			bot->scores[_bot_leaf_scavenge - 1], bot->scores[_bot_leaf_vehicle - 1],
+			bot->target_source == _bot_target_seen ? "seen" :
+			bot->target_source == _bot_target_attacker ? "attacker" :
+			bot->target_source == _bot_target_remembered ? "remembered" :
+			bot->target_source == _bot_target_shared ? "shared" : "none");
+	}
+	/* (the old leaf lets go: its route, its retreat; the tree starts again
+	and descends to the new one) */
+	{
+		engine_ai_behavior_callbacks callbacks;
+
+		callbacks.context = bot;
+		callbacks.tick = bot_behavior_tick_plain;
+		callbacks.cancel = bot_behavior_cancel;
+		callbacks.trace = NULL;
+		if (bot->behavior.initialized)
+			engine_ai_behavior_cancel(&bot->behavior, &bot_behavior, &callbacks);
+		engine_ai_behavior_begin(&bot->behavior, &bot_behavior);
+	}
+	bot->chosen_leaf = leaf;
+}
+
 static void bot_think(
 	struct bot *bot)
 {
@@ -2180,6 +2799,7 @@ static void bot_think(
 	bot_perceive(bot, player, unit);
 	bot_observe_inventory(bot, unit);
 	bot_find_opportunity(bot);
+	bot_decide(bot, player, unit);
 
 	actor.index = (uint32_t)DATUM_INDEX_TO_ABSOLUTE_INDEX(bot->player_index);
 	actor.generation = (uint32_t)(unsigned short)(bot->player_index >> 16);
@@ -2195,19 +2815,17 @@ static void bot_think(
 	callbacks.relevant = bot_behavior_relevant;
 	callbacks.trace = NULL;
 
-	/* an earlier leaf that has become relevant (an enemy seen, the shields
-	down) takes over from the running one */
-	if (bot->behavior.running_node != ENGINE_AI_BEHAVIOR_NODE_MAX && !bot->behavior.faulted)
-	{
-		engine_ai_behavior_intent_reevaluate(&bot->bridge, &bot->behavior, &bot_behavior,
-			ENGINE_AI_BEHAVIOR_NODE_MAX, &callbacks, &bot->batch, &result);
-	}
+	bot->abs_suppressed = FALSE;
+	result = ENGINE_AI_BEHAVIOR_RUNNING;
 	if (engine_ai_behavior_intent_step(&bot->bridge, &bot->behavior, &bot_behavior,
 		BOT_BEHAVIOR_WORK_PER_TICK, &callbacks, &bot->batch, &result) != ENGINE_AI_BEHAVIOR_INTENT_OK)
 	{
 		/* (a faulted tree: start again next tick) */
 		bot_reset_life(bot, bot->unit_index);
 	}
+	/* (the chosen leaf finished or gave up: choose again next tick) */
+	else if (result != ENGINE_AI_BEHAVIOR_RUNNING && result != ENGINE_AI_BEHAVIOR_YIELDED)
+		bot->decide_now = TRUE;
 
 	csmemset(&bot->pending, 0, sizeof(bot->pending));
 	engine_ai_intent_execute(&bot->batch, &tick, &bot->report, bot, bot_execute_intent);
@@ -2216,14 +2834,14 @@ static void bot_think(
 	/* (what it is doing, every ten seconds, to the log) */
 	if (game_time_get() % (10 * TICKS_PER_SECOND) == bot->slot * 7)
 	{
-		static char const *const leaves[] = { "none", "retreat", "fight", "roam", "scavenge", "vehicle" };
 		real_point3d origin;
 		uint32_t leaf = bot->behavior.running_node < NUMBEROF(bot_behavior_nodes) ?
 			bot_behavior_nodes[bot->behavior.running_node].leaf_id : 0;
 
 		object_get_origin(bot->unit_index, &origin);
-		platform_log("bots: bot %d at (%.1f %.1f %.1f) yaw %.0f %s, target %ld%s, shield %.2f, kills %d deaths %d",
-			bot->slot + 1, origin.x, origin.y, origin.z, RADIANS_TO_DEGREES(bot->facing.yaw), leaves[leaf < NUMBEROF(leaves) ? leaf : 0],
+		platform_log("bots: bot %d at (%.1f %.1f %.1f) yaw %.0f %s (conf %.2f), target %ld%s, shield %.2f, kills %d deaths %d",
+			bot->slot + 1, origin.x, origin.y, origin.z, RADIANS_TO_DEGREES(bot->facing.yaw),
+			bot_leaf_names[leaf < NUMBEROF(bot_leaf_names) ? leaf : 0], bot->confidence,
 			(long)(bot->target_player_index == NONE ? -1 : DATUM_INDEX_TO_ABSOLUTE_INDEX(bot->target_player_index)),
 			bot->target_visible ? " (seen)" : "", unit->object.shield_vitality,
 			player->statistics.kills[0], player->statistics.deaths);
@@ -2333,6 +2951,69 @@ static void bots_join(
 	}
 }
 
+/* Halo's player-name field is 12 wchar_t entries, including its terminator. */
+static char const *const bot_names[] =
+{
+	"343 Parfit", "343 Locke", "343 Hume", "343 Aloysiu", "343 Hobbes",
+	"343 Nando", "343 CreamCo", "343 Godfath", "343 Darksta", "343 Meowlni",
+	"343 SaltBar", "343 FreeMon", "343 Ritzy", "343 Beard", "343 Hundy",
+	"343 Razzle", "343 Dazzle"
+};
+
+static void bot_name_set(
+	struct network_player *network_player,
+	short bot_index,
+	char name[12])
+{
+	char const *source;
+	short character;
+
+	csmemset(name, 0, 12);
+	if (bot_index < NUMBEROF(bot_names))
+		source = bot_names[bot_index];
+	else
+	{
+		name[0] = 'B'; name[1] = 'o'; name[2] = 't'; name[3] = ' ';
+		if (bot_index + 1 >= 10)
+		{
+			name[4] = (char)('0' + (bot_index + 1) / 10);
+			name[5] = (char)('0' + (bot_index + 1) % 10);
+		}
+		else
+			name[4] = (char)('1' + bot_index);
+		source = name;
+	}
+	for (character = 0; character < 11 && source[character]; character++)
+	{
+		name[character] = source[character];
+		network_player->name[character] = (wchar_t)source[character];
+	}
+}
+
+/* Rank this bot among the teammates that got a bot slot before it. */
+static long bots_team_rank(
+	struct bot *bot)
+{
+	struct player_datum *player = bot_player(bot);
+	short index;
+	long rank = 0;
+
+	if (!player)
+		return NONE;
+	for (index = 0; index < bot->slot; index++)
+	{
+		struct bot *other = &bots_globals.bots[index];
+		struct player_datum *other_player;
+
+		if (!other->active)
+			continue;
+		other_player = bot_player(other);
+		if (other_player && other_player->team_index == player->team_index)
+			rank++;
+	}
+	return rank;
+}
+
 /* the bot in the slot joins as a player; FALSE if there is no room for it */
 static boolean bot_join(
 	struct bot *bot,
@@ -2342,24 +3023,13 @@ static boolean bot_join(
 	struct network_player network_player;
 	long player_index;
 	char name[12];
-	short character;
 	long machine_index = bot_machine_index(bot_index);
 
 	if (bots_free_machine_slots(machine_index) == 0)
 		return FALSE;
 
 	csmemset(&network_player, 0, sizeof(network_player));
-	csmemset(name, 0, sizeof(name));
-	name[0] = 'B'; name[1] = 'o'; name[2] = 't'; name[3] = ' ';
-	if (bot_index + 1 >= 10)
-	{
-		name[4] = (char)('0' + (bot_index + 1) / 10);
-		name[5] = (char)('0' + (bot_index + 1) % 10);
-	}
-	else
-		name[4] = (char)('1' + bot_index);
-	for (character = 0; character < 11 && name[character]; character++)
-		network_player.name[character] = (wchar_t)name[character];
+	bot_name_set(&network_player, bot_index, name);
 	network_player.primary_color_index = (short)((3 + bot_index * 5) % 18);
 	network_player.machine_index = (char)machine_index;
 	network_player.controller_index = (char)(bot_index % MAXIMUM_LOCAL_PLAYERS);
@@ -2383,7 +3053,22 @@ static boolean bot_join(
 	bot->target_player_index = NONE;
 	bot->retreat_start_time = NONE;
 	bot->progress_time = NONE;
+	bot->surface_nav_wait_time = NONE;
 	engine_ai_rng32_seed(&bot->rng, bots_globals.epoch * 7919u + (uint64_t)now, (uint64_t)bot_index);
+	{
+		struct player_datum *player = bot_player(bot);
+		long team_index = game_engine_has_teams() && player ? player->team_index : NONE;
+		long team_rank = team_index != NONE ? bots_team_rank(bot) : NONE;
+
+		bot_navigation_agent_initialize(&bot->navigation_agent, bot_index + 1, team_index, team_rank);
+		if (bot->navigation_agent.lane_assigned)
+		{
+			platform_log("bots: bot %d assigned team %ld lane %d squad %ld side %d phase %d",
+				bot_index + 1, team_index, bot->navigation_agent.lane_index,
+				bot->navigation_agent.squad_index, bot->navigation_agent.lane_side,
+				bot->navigation_agent.lane_phase);
+		}
+	}
 	engine_ai_behavior_begin(&bot->behavior, &bot_behavior);
 	bots_globals.had_bots = TRUE;
 	platform_log("bots: %s joined (%s) at tick %ld", name, bots_globals.skill->name, now);

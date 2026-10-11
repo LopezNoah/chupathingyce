@@ -1,11 +1,12 @@
 # BSP surface navigation: first working slice
 
-This is a **host-local, walking-only geometry navigation foundation**, independent
+This is a **host-local, walking-only geometry navigation system**, independent
 of combat/tactical selection. It does not replace campaign actors or modify map
 tags, original map files, player spawning, saved game layouts, or network messages.
-Normal multiplayer bots still use their existing spawn-location graph. The new
-resource is exercised by an opt-in Bot 1 walking probe, not silently enabled for
-normal combat. Forge nav authoring is not implemented yet.
+Normal multiplayer bots use its collision-checked BSP routes for lane patrol,
+scavenging and pursuit; their spawn-location graph is only a delayed fallback if
+the BSP resource is unavailable for ten seconds. The opt-in Bot 1 probe remains
+for isolated geometry acceptance tests. Forge nav authoring is not implemented.
 
 ## Modules and contracts
 
@@ -66,6 +67,7 @@ object-change notification system.
   return capacity rather than an incomplete route.
 - Build: at most 128 source/adjacency rows per game tick; no background thread.
 - Probe search: at most 2 polygon expansions per tick, each with at most 8 edges.
+- Each normal bot search: at most 4 polygon expansions per tick, each with at most 8 edges; moving goals replan after 12 metres to avoid restarting on ordinary target motion.
 - Dump: at most 64 polygons per tick, published by renaming a `.partial` file.
 - Projection/query initialization is a bounded **linear** polygon scan, not tiled
   or spatially indexed. BFS minimizes polygon hops, not geometric distance.
@@ -147,9 +149,9 @@ errors on every frame or complete tactical correctness.
 
 ## Next increments (in order)
 
-1. Instrument and test real moving/static obstacles, long paths, respawning,
-   game-state reload and campaign BSP-switch/fallback lifecycle. Improve centroid
-   corridor quality and projection indexing before enabling normal bot consumers.
+1. Validate normal-bot lane routes, pursuit replanning, moving/static obstacles,
+   long paths, respawning, game-state reload and campaign BSP-switch/fallback
+   lifecycle. Improve centroid corridor quality and projection indexing.
 2. Introduce explicit CE-grounded traversal capability/link policy and validate
    feasible directed jumps/drops with actual physics; do not assume clamber.
 3. Add Forge seed/jump/tactical authoring, selection/undo/visualization and a

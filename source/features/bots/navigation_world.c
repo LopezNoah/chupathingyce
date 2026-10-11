@@ -21,6 +21,7 @@
 #ifdef HALO_FEATURE_BOTS
 
 int config_boolean(char const *name);
+long config_integer(char const *name);
 char const *config_string(char const *name);
 void platform_log(char const *format, ...);
 boolean network_game_distributed_client(void);
@@ -249,7 +250,10 @@ void navigation_world_update_for_players(void)
     long now=game_time_get();
     short i;
     char const *dump=config_string("debug.nav_dump");
-    if (!config_boolean("debug.nav_probe") && (!dump || !dump[0])) return;
+    /* The ordinary bots now use this BSP resource too. Keep it dormant when
+     * bots and diagnostics are all off so the default build does no mesh work. */
+    if (!config_boolean("debug.nav_probe") && (!dump || !dump[0]) &&
+        config_integer("bots.count") <= 0) return;
     if (network_game_distributed_client() || (game_connection()!=_game_connection_local &&
         game_connection()!=_game_connection_network_server)) return;
     if (world.last_tick==now) return;

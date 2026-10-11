@@ -9,7 +9,9 @@ Automated system link sessions for testing the netcode without the menus
   (slayer by default; game_engine_get_variant_by_name), as the pregame
   screen's fast setup does, and starts it debug.network_test_start seconds
   later; with more variants, once a game is over (debug.network_test_score
-  makes it short) the next, as the host's button on the scores does. A map
+  makes it short) the next, as the host's button on the scores does. Set
+  debug.network_test_loadout to "rifle_pistol" to give players an Assault Rifle
+  and Magnum instead of the map's starting equipment. A map
   with a path is that level (custom_maps\a30, a Custom Edition map's), and
   the variant "coop" makes the game network co-op on it, at normal
   difficulty, as the Map screen does for a campaign level;
@@ -952,7 +954,9 @@ void network_test_update(
 			{
 				char path[128];
 				char variant_name[64];
+				char const *loadout;
 				struct game_variant variant;
+				struct game_variant_options options;
 
 				/* (a level of its own path, else a multiplayer map's name) */
 				if (strchr(network_test.map_name, '\\'))
@@ -979,6 +983,16 @@ void network_test_update(
 					if (network_test.score_to_win > 0)
 						variant.universal_variant.score_to_win = network_test.score_to_win;
 					player_ui_set_game_variant(&variant);
+					loadout = config_string("debug.network_test_loadout");
+					if (loadout && !csstrcasecmp(loadout, "rifle_pistol"))
+					{
+						game_variant_options_default(&variant, &options);
+						options.loadout = _loadout_custom;
+						options.primary_weapon = _loadout_weapon_assault_rifle;
+						options.secondary_weapon = _loadout_weapon_pistol;
+						player_ui_set_game_variant_options(&options);
+						platform_log("network test: starting with assault rifle and Magnum");
+					}
 					network_game_server_change_game_variant(global_network_game_server_get(), &variant);
 				}
 				network_test.map_set = TRUE;

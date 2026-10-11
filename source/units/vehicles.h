@@ -10,6 +10,8 @@ header included in hcex build.
 
 /* ---------- headers */
 
+/* port: vehicles.h declares port helpers and uses Halo's base types. */
+#include "cseries.h"
 #include "units.h"
 
 /* ---------- constants */
@@ -38,6 +40,8 @@ struct vehicle_runtime_datum;
 
 /* Ground control types supported by the first bot driving policy. */
 boolean vehicle_supports_bot_driver(long vehicle_index);
+/* port: a fixed turret is a manned seat, not a vehicle the bot can drive. */
+boolean vehicle_is_fixed_turret(long vehicle_index);
 void vehicle_hover(
 	long vehicle_index,
 	boolean hover);

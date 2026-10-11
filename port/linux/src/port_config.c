@@ -526,6 +526,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.network_test_score", _config_integer, "0", "HALO_NETWORK_TEST_SCORE", _environment_value, _platform_all,
 		"The score an automated test host's game type plays to (a short game, to\n"
 		"test the next); 0 the game type's own." },
+	{ "debug.network_test_loadout", _config_string, "\"map\"", "HALO_NETWORK_TEST_LOADOUT", _environment_value, _platform_all,
+		"Starting loadout for automated network tests: \"map\" leaves the game\n"
+		"type's weapons alone; \"rifle_pistol\" gives players an assault rifle\n"
+		"and Magnum instead of the map's starting equipment." },
 	{ "debug.network_test_shoot", _config_real, "0.0", "HALO_NETWORK_TEST_SHOOT", _environment_value, _platform_all,
 		"Every this many seconds each automated test player hits the next with\n"
 		"their weapon, within its reach (the host brings far players near the\n"

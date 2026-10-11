@@ -645,6 +645,9 @@ symbols in this file:
 
 #include "cseries.h"
 #include "units.h"
+#ifdef HALO_FEATURE_BOTS
+#include "features/bots/human_callouts.h" /* port: local-human incoming-fire bearings */
+#endif
 
 #include "bipeds.h"
 #include "biped_definitions.h"
@@ -7131,6 +7134,12 @@ void unit_damage_aftermath(
 			animation_flag = TRUE;
 		}
 
+#ifdef HALO_FEATURE_BOTS
+		/* port: share the same non-silent incoming direction the player feels,
+		not the attacker location. Positive damage only; validation is host-local. */
+		if (direction_valid && total_damage > 0.f)
+			human_callouts_damage(unit_index, damage_data->owner_player_index, &damage_data->direction);
+#endif
 		unit_ping_animation(
 			unit_index,
 			lethal,

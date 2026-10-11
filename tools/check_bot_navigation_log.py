@@ -5,6 +5,7 @@ import argparse
 import math
 import re
 from pathlib import Path
+from typing import TypeVar
 
 LANE_RE = re.compile(
     r"bots: bot (\d+) assigned team (\d+) lane (\d+) squad (\d+) side (-?\d+) phase (\d+)"
@@ -21,11 +22,16 @@ STATUS_RE = re.compile(
     r"bots: bot (\d+) at \((-?[\d.]+) (-?[\d.]+) (-?[\d.]+)\) "
     r"yaw -?[\d.]+ (\w+) \(conf"
 )
+LIFE_RE = re.compile(r"bots: bot (\d+) team -?\d+ cleared item claims \(new life\)")
+CRASH_RE = re.compile(r"FAILURE|assertion failed|Assertion failed|AddressSanitizer|runtime error:")
 STATIONARY_DISTANCE = 0.5
 STATIONARY_SAMPLES = 3
 
 
-def parse_number(value: str, kind: type) -> int | float:
+Number = TypeVar("Number", int, float)
+
+
+def parse_number(value: str, kind: type[Number]) -> Number:
     try:
         return kind(value)
     except ValueError as error:
@@ -33,34 +39,54 @@ def parse_number(value: str, kind: type) -> int | float:
 
 
 def check_movement(text: str) -> None:
+    if CRASH_RE.search(text):
+        raise SystemExit("crash/assertion/sanitizer failure in bot navigation log")
     stationary: dict[int, tuple[tuple[float, float, float], int]] = {}
     for line in text.splitlines():
+        life = LIFE_RE.search(line)
+        if life:
+            stationary.pop(parse_number(life.group(1), int), None)
+            continue
         match = STATUS_RE.search(line)
         if not match:
             continue
-        bot = int(match.group(1))
+        bot = parse_number(match.group(1), int)
         position: tuple[float, float, float] = (
-            float(match.group(2)), float(match.group(3)), float(match.group(4))
+            parse_number(match.group(2), float), parse_number(match.group(3), float),
+            parse_number(match.group(4), float)
         )
         behavior = match.group(5)
         if behavior == "vehicle":
             stationary.pop(bot, None)
             continue
         previous = stationary.get(bot)
-        if previous and math.dist(previous[0], position) < STATIONARY_DISTANCE:
+        # Jumping against a wall is not horizontal walking progress.
+        if previous and math.dist(previous[0][:2], position[:2]) < STATIONARY_DISTANCE:
             stationary[bot] = (previous[0], previous[1] + 1)
             if stationary[bot][1] >= STATIONARY_SAMPLES:
                 raise SystemExit(
                     f"bot {bot} stayed within {STATIONARY_DISTANCE:.1f} m for "
-                    f"{STATIONARY_SAMPLES} consecutive status samples"
+                    f"{STATIONARY_SAMPLES} consecutive same-life status samples horizontally"
                 )
         else:
             stationary[bot] = (position, 1)
 
 
+def check_movement_coverage(text: str, minimum_bots: int) -> int:
+    check_movement(text)
+    samples: dict[int, int] = {}
+    for match in STATUS_RE.finditer(text):
+        bot = parse_number(match.group(1), int)
+        samples[bot] = samples.get(bot, 0) + 1
+    covered = sum(count >= STATIONARY_SAMPLES for count in samples.values())
+    if covered < minimum_bots:
+        raise SystemExit(f"insufficient bot status samples for movement coverage: {covered}/{minimum_bots}")
+    return covered
+
+
 def check_log(path: Path, minimum_bots: int) -> None:
     text = path.read_text(errors="replace")
-    check_movement(text)
+    check_movement_coverage(text, minimum_bots)
     assignments = [
         tuple(parse_number(value, int) for value in match)
         for match in LANE_RE.findall(text)
@@ -79,9 +105,10 @@ def check_log(path: Path, minimum_bots: int) -> None:
         for match in ROUTE_RE.findall(text)
     ]
 
-    if len(assignments) < minimum_bots:
+    assigned_bots = {assignment[0] for assignment in assignments}
+    if len(assigned_bots) < minimum_bots:
         raise SystemExit(
-            f"expected at least {minimum_bots} lane assignments, found {len(assignments)}"
+            f"expected at least {minimum_bots} distinct assigned bots, found {len(assigned_bots)}"
         )
     teams = {team for _, team, *_ in assignments}
     if len(teams) < 2:
@@ -132,14 +159,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.movement_only:
         text = args.log.read_text(errors="replace")
-        samples: dict[int, int] = {}
-        for match in STATUS_RE.finditer(text):
-            bot = int(match.group(1))
-            samples[bot] = samples.get(bot, 0) + 1
-        if sum(count >= STATIONARY_SAMPLES for count in samples.values()) < args.minimum_bots:
-            raise SystemExit("insufficient bot status samples for movement coverage")
-        check_movement(text)
-        print(f"passed: sampled movement for {len(samples)} bots (vehicle seats exempt)")
+        covered = check_movement_coverage(text, args.minimum_bots)
+        print(f"passed: sampled horizontal movement for {covered} bots (vehicle seats exempt)")
     else:
         check_log(args.log, args.minimum_bots)
 

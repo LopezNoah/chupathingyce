@@ -29,7 +29,7 @@ enum { _unit_active_camouflaged_bit, _unit_super_camouflaged_bit };
 enum { _object_type_biped, _object_type_vehicle };
 enum { _collision_test_for_line_of_sight_flags, _collision_test_for_bipeds_living_flags };
 enum { _bot_target_none, _bot_target_seen, _bot_target_attacker, _bot_target_remembered, _bot_target_shared };
-enum { _bot_leaf_fight, _bot_leaf_retreat };
+enum { _bot_leaf_fight, _bot_leaf_retreat, _bot_leaf_roam };
 struct unit_attacker { long player_index,game_time_stamp; };
 struct unit_datum {
     struct { long parent_object_index; short type; } object;
@@ -82,7 +82,12 @@ static struct unit_datum units[2];
 static real_point3d positions[2];
 static long now;
 static int player_data,callouts,los_calls,sweeps,mode;
-static boolean line_clear,shared;
+static boolean line_clear,shared,human_alert;
+static boolean human_callouts_nearest_alert(long team,const real_point3d *from,real_point3d *point) {
+    (void)from;
+    if (!human_alert || team!=0) return FALSE;
+    point->x=0.f; point->y=8.f; point->z=0.f; return TRUE;
+}
 static real observed_margin;
 static long game_time_get(void) { return now; }
 static long bot_seconds_to_ticks(real seconds) { return (long)(seconds*30.f); }
@@ -168,7 +173,7 @@ static struct bot fresh(void) {
     positions[0].x=positions[0].y=positions[0].z=0.f;
     positions[1].x=2.f; positions[1].y=positions[1].z=0.f;
     skill->shares_sightings=TRUE; now=100; callouts=los_calls=sweeps=mode=0;
-    line_clear=TRUE; shared=FALSE;
+    line_clear=TRUE; shared=FALSE; human_alert=FALSE;
     return b;
 }
 static void perception_tests(void) {
@@ -241,6 +246,16 @@ static void steering_tests(void) {
     b=fresh(); mode=1; b.pending.has_move=TRUE; b.pending.move_speed=1.f;
     bot_submit_action(&b);
     assert(submitted.throttle.j>0.4f && b.moved_last_tick);
+    /* Damage cues orient patrol bots without acquiring an enemy or firing. */
+    b=fresh(); human_alert=TRUE; b.chosen_leaf=_bot_leaf_roam;
+    bot_hear_human_alert(&b,0);
+    assert(b.pending.has_look && b.pending.look.yaw>1.5f);
+    assert(b.target_player_index==NONE && !b.target_visible && b.pending.control_flags==0);
+    b.pending.has_look=FALSE; b.target_player_index=1; bot_hear_human_alert(&b,0);
+    assert(!b.pending.has_look);
+    b.target_player_index=NONE; b.chosen_leaf=_bot_leaf_retreat; bot_hear_human_alert(&b,0);
+    assert(!b.pending.has_look);
+    b.chosen_leaf=_bot_leaf_roam; bot_hear_human_alert(&b,1); assert(!b.pending.has_look);
 }
 #endif
 int main(void) {

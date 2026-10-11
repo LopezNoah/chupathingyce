@@ -9,8 +9,9 @@ port: the bots' blackboard, after Halo Infinite's BotManager (GDC 2022,
     adapter for each mode reads its state and writes the ambitions, and a bot
     acts on them only as a player can (walking, picking up, standing in);
   - sightings: each team's last sighting of each enemy, written by the bots
-    whose skill shares what they see, read by their teammates. It is what a
-    player would call out, and only of enemies a bot has actually seen.
+    whose skill shares what they see, read by their teammates. port: local
+    humans also publish sustained camera/LOS contacts through human_callouts.c;
+    incoming-damage cues are separate bearings, never visual sightings.
 
 Everything here is host-local and derived: it is rebuilt from the game's
 state and never sent to another machine.
@@ -25,6 +26,7 @@ state and never sent to another machine.
 #include "units/units.h"
 #include "engine_ai/claims.h"
 #include "bot_manager.h"
+#include "human_callouts.h" /* port: implicit local-human team awareness */
 
 /* port/linux/src/platform.h's */
 void platform_log(char const *format, ...);
@@ -65,6 +67,7 @@ void bot_manager_reset(
 
 	csmemset(&bot_manager_globals, 0, sizeof(bot_manager_globals));
 	engine_ai_claims_reset(&bot_manager_globals.item_claims);
+	human_callouts_reset(); /* port: no contacts survive map/game resets */
 	for (team_index = 0; team_index < BOT_MANAGER_TEAMS; team_index++)
 	{
 		for (player_index = 0; player_index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; player_index++)
@@ -79,6 +82,7 @@ void bot_manager_update(
 	void)
 {
 	bot_manager_publish_ambitions();
+	human_callouts_update(); /* port: human POV contacts before teammates think */
 }
 
 short bot_manager_ambition_count(
@@ -135,8 +139,13 @@ void bot_manager_report_sighting(
 		distance3d(position, &sighting->position) >= 8.f;
 	if (callout)
 	{
-		platform_log("bots: bot %d called out enemy %ld last seen at (%.1f %.1f %.1f)",
-			reporter_bot_number, absolute_index, position->x, position->y, position->z);
+		/* port: zero denotes an implicit human callout, not Bot 0. */
+		if (reporter_bot_number == 0)
+			platform_log("bots: human called out enemy %ld last seen at (%.1f %.1f %.1f)",
+				absolute_index, position->x, position->y, position->z);
+		else
+			platform_log("bots: bot %d called out enemy %ld last seen at (%.1f %.1f %.1f)",
+				reporter_bot_number, absolute_index, position->x, position->y, position->z);
 		sighting->last_callout_time = now;
 	}
 	sighting->player_index = enemy_player_index;

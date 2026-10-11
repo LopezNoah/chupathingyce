@@ -86,6 +86,7 @@ Configuration (port/linux/src/port_config.c): bots.count (0..31), bots.skill.
 #include "items/equipment_definitions.h"
 #include "extensions/extension_api.h"
 #include "bot_manager.h"
+#include "human_callouts.h" /* port: nearby human incoming-fire cues */
 #include "bot_navigation.h"
 #include "navigation_world.h"
 
@@ -2904,6 +2905,26 @@ static void bot_steer_movement(
 	bot->pending.move_speed = 0.f;
 }
 
+/* port: a patrol bot turns toward nearby human damage bearings. The cue is
+not a target and never authorizes fire; other behaviors keep facing priority. */
+static void bot_hear_human_alert(
+	struct bot *bot,
+	long team_index)
+{
+	real_point3d origin;
+	real_point3d alert;
+
+	if (bot->chosen_leaf != _bot_leaf_roam || bot->target_player_index != NONE)
+		return;
+	object_get_origin(bot->unit_index, &origin);
+	if (human_callouts_nearest_alert(team_index, &origin, &alert))
+	{
+		unit_get_camera_position(bot->unit_index, &origin);
+		bot->pending.look = bot_angles_to(&origin, &alert);
+		bot->pending.has_look = TRUE;
+	}
+}
+
 /* the accepted intents as the player's action: the facing turned toward the
 look at this skill's speed, and the movement relative to it */
 static void bot_submit_action(
@@ -3260,6 +3281,7 @@ static void bot_think(
 
 	csmemset(&bot->pending, 0, sizeof(bot->pending));
 	engine_ai_intent_execute(&bot->batch, &tick, &bot->report, bot, bot_execute_intent);
+	bot_hear_human_alert(bot, player->team_index); /* port: directional cue only */
 	bot_submit_action(bot);
 
 	/* (what it is doing, every ten seconds, to the log) */

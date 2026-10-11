@@ -77,8 +77,8 @@ boolean bot_manager_ambition_allowed(
 	struct bot_ambition const *ambition,
 	long team_index);
 
-/* a sighting of an enemy player by a callout-capable bot; ignored outside
-team games and for teams out of range. Returns no hidden enemy information. */
+/* port: a sighting by a callout-capable bot or a local human (reporter 0);
+ignored outside team games and for teams out of range. No hidden information. */
 void bot_manager_report_sighting(
 	long team_index,
 	long enemy_player_index,

@@ -1,0 +1,156 @@
+/* Compile the production module with only engine dependencies replaced. */
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#define HALO_FEATURE_BOTS 1
+#define TRUE 1
+#define FALSE 0
+#define NONE (-1)
+#define TICKS_PER_SECOND 30
+#define MAXIMUM_NUMBER_OF_LOCAL_PLAYERS 4
+#define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 8
+#define BOT_MANAGER_TEAMS 2
+#define TEST_FLAG(flags,bit) (((flags)&(1UL<<(bit)))!=0)
+#define DATUM_INDEX_TO_ABSOLUTE_INDEX(x) ((x)&255)
+#define csmemset memset
+typedef float real;
+typedef int boolean;
+typedef struct { real x,y,z; } real_point3d;
+typedef struct { real i,j,k; } real_vector3d;
+enum { _object_dead_bit };
+enum { _unit_active_camouflaged_bit, _unit_super_camouflaged_bit };
+enum { _director_perspective_first_person, _director_perspective_scripted, _director_perspective_neutral };
+enum { _collision_test_for_line_of_sight_flags };
+struct unit_datum {
+    struct { unsigned long damage_flags; } object;
+    struct { unsigned long flags; real active_camouflage,active_camouflage_super_amount; long player_index; } unit;
+};
+struct player_datum { long unit_index,team_index; short local_player_index; };
+struct observer_result { real_point3d position; real_vector3d forward; real field_of_view; };
+struct collision_result { int unused; };
+struct data_iterator { long datum_index; };
+static struct player_datum players[3];
+static struct unit_datum units[4];
+static real_point3d positions[4];
+static struct observer_result camera;
+static long now;
+static int player_data,reports,los_tests,perspective;
+static boolean enabled,teams,blocked,running,had_bots;
+static real_point3d reported;
+static int config_boolean(char const *name) { assert(strcmp(name,"bots.human_callouts")==0); return enabled; }
+static boolean bots_game_had_bots(void) { return had_bots; }
+static boolean game_engine_has_teams(void) { return teams; }
+static boolean game_engine_running(void) { return running; }
+static boolean game_engine_showing_postgame(void) { return FALSE; }
+static long game_time_get(void) { return now; }
+static long local_player_get_player_index(short index) { return index==0 ? 0 : NONE; }
+static struct player_datum *player_try_and_get(long index) { return index>=0 && index<3 ? &players[index] : NULL; }
+static struct unit_datum *unit_try_and_get(long index) { return index>=0 && index<4 ? &units[index] : NULL; }
+static void unit_get_camera_position(long index,real_point3d *p) { *p=positions[index]; }
+static void object_get_origin(long index,real_point3d *p) { assert(index==0 || index==3); *p=positions[index]; }
+static int director_get_perspective(short index) { (void)index; return perspective; }
+static struct observer_result const *observer_get_camera(short index) { assert(index==0); return &camera; }
+static boolean valid_real(real x) { return isfinite(x); }
+static real cosine(real x) { return cosf(x); }
+static void vector_from_points3d(const real_point3d *a,const real_point3d *b,real_vector3d *v) {
+    v->i=b->x-a->x; v->j=b->y-a->y; v->k=b->z-a->z;
+}
+static real magnitude3d(const real_vector3d *v) { return sqrtf(v->i*v->i+v->j*v->j+v->k*v->k); }
+static real dot_product3d(const real_vector3d *a,const real_vector3d *b) { return a->i*b->i+a->j*b->j+a->k*b->k; }
+static real normalize3d(real_vector3d *v) {
+    real length=magnitude3d(v);
+    if (length>0.f) { v->i/=length; v->j/=length; v->k/=length; }
+    return length;
+}
+static void point_from_line3d(const real_point3d *p,const real_vector3d *v,real scale,real_point3d *out) {
+    out->x=p->x+v->i*scale; out->y=p->y+v->j*scale; out->z=p->z+v->k*scale;
+}
+static real distance3d(const real_point3d *a,const real_point3d *b) {
+    real_vector3d delta; vector_from_points3d(a,b,&delta); return magnitude3d(&delta);
+}
+static boolean collision_test_vector(int flags,const real_point3d *a,const real_vector3d *delta,
+    long ignore,struct collision_result *result) {
+    (void)flags; (void)a; (void)delta; (void)result; assert(ignore==0 || ignore==3); los_tests++; return blocked;
+}
+static void data_iterator_new(struct data_iterator *it,int data) { (void)data; it->datum_index=-1; }
+static void *data_iterator_next(struct data_iterator *it) { it->datum_index++; return it->datum_index<3 ? &players[it->datum_index] : NULL; }
+static void bot_manager_report_sighting(long team,long enemy,short bot,const real_point3d *point) {
+    assert(team==0 && enemy==1 && bot==0); reports++; reported=*point;
+}
+/* PRODUCTION_MODULE */
+static void reset(void) {
+    memset(players,0,sizeof(players)); memset(units,0,sizeof(units)); memset(positions,0,sizeof(positions));
+    players[0].unit_index=0; players[0].team_index=0; players[0].local_player_index=0;
+    players[1].unit_index=1; players[1].team_index=1; players[1].local_player_index=NONE;
+    players[2].unit_index=2; players[2].team_index=0; players[2].local_player_index=NONE;
+    units[0].unit.player_index=0; units[1].unit.player_index=1; units[2].unit.player_index=2;
+    positions[1].x=10.f; camera.position=positions[0];
+    camera.forward.i=1.f; camera.forward.j=camera.forward.k=0.f; camera.field_of_view=(real)M_PI/3.f;
+    now=100; enabled=teams=running=had_bots=TRUE; blocked=FALSE; perspective=0; reports=los_tests=0;
+    human_callouts_reset();
+}
+static void sight_tests(void) {
+    int tick;
+    reset();
+    for (tick=0;tick<30;tick++) { now=100+tick; human_callouts_update(); assert(reports==0); }
+    now=130; human_callouts_update(); assert(reports==1 && reported.x==10.f);
+    positions[1].x=12.f; now++; human_callouts_update(); assert(reports==2 && reported.x==12.f);
+    blocked=TRUE; now++; human_callouts_update(); assert(reports==2);
+    blocked=FALSE;
+    for (tick=0;tick<30;tick++) { now=133+tick; human_callouts_update(); assert(reports==2); }
+    now=163; human_callouts_update(); assert(reports==3);
+    /* Camo, behind view, pitch/zoom, range and ally filters never call LOS. */
+    reset(); units[1].unit.flags=1UL<<_unit_active_camouflaged_bit;
+    for (tick=0;tick<40;tick++) { now++; human_callouts_update(); }
+    assert(reports==0 && los_tests==0);
+    units[1].unit.flags=0; units[1].unit.active_camouflage=0.5f; human_callouts_update(); assert(los_tests==0);
+    units[1].unit.active_camouflage=0.f; units[1].unit.active_camouflage_super_amount=0.5f;
+    human_callouts_update(); assert(los_tests==0);
+    reset(); positions[1].x=-10.f; human_callouts_update(); assert(los_tests==0);
+    positions[1].x=70.f; human_callouts_update(); assert(los_tests==0);
+    positions[1].x=10.f; positions[1].z=10.f; human_callouts_update(); assert(los_tests==0);
+    positions[1].z=0.f; positions[1].y=2.f; camera.field_of_view=0.1f;
+    human_callouts_update(); assert(los_tests==0);
+    reset();
+    for (tick=0;tick<29;tick++) { now++; human_callouts_update(); }
+    players[1].unit_index=3; now++; human_callouts_update(); now++; human_callouts_update(); assert(reports==0);
+    reset(); human_callouts_update(); now+=29; human_callouts_update(); now++; human_callouts_update(); assert(reports==0);
+    reset(); human_callouts_update(); perspective=_director_perspective_scripted;
+    for (tick=0;tick<40;tick++) { now++; human_callouts_update(); } assert(reports==0);
+    reset(); enabled=FALSE;
+    for (tick=0;tick<40;tick++) { now++; human_callouts_update(); } assert(reports==0);
+    reset(); teams=FALSE;
+    for (tick=0;tick<40;tick++) { now++; human_callouts_update(); } assert(reports==0);
+    reset(); units[0].object.damage_flags=1;
+    for (tick=0;tick<40;tick++) { now++; human_callouts_update(); } assert(reports==0);
+}
+static void damage_tests(void) {
+    real_vector3d incoming={-1.f,0.f,0.5f};
+    real_point3d from={0.f,0.f,0.f},point;
+    reset(); human_callouts_update();
+    units[1].unit.flags=1UL<<_unit_active_camouflaged_bit;
+    human_callouts_damage(0,1,&incoming);
+    assert(human_callouts_nearest_alert(0,&from,&point) && point.x==8.f && point.y==0.f && point.z==0.f);
+    assert(reports==0); /* no visual report or exact attacker location */
+    positions[1].x=100.f; now++;
+    assert(human_callouts_nearest_alert(0,&from,&point) && point.x==8.f);
+    assert(!human_callouts_nearest_alert(1,&from,&point));
+    from.x=33.f; assert(!human_callouts_nearest_alert(0,&from,&point)); from.x=0.f;
+    now=161; assert(!human_callouts_nearest_alert(0,&from,&point));
+    reset(); human_callouts_damage(0,2,&incoming); assert(!human_callouts_nearest_alert(0,&from,&point));
+    human_callouts_damage(2,1,&incoming); assert(!human_callouts_nearest_alert(0,&from,&point));
+    incoming.i=0.f; incoming.k=1.f; human_callouts_damage(0,1,&incoming);
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+    incoming.i=-1.f; human_callouts_damage(0,1,&incoming); units[0].object.damage_flags=1;
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+    reset(); human_callouts_damage(0,1,&incoming); players[0].unit_index=3;
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+    reset(); human_callouts_damage(0,1,&incoming); now--;
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+    reset(); enabled=FALSE; human_callouts_damage(0,1,&incoming);
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+    reset(); human_callouts_damage(0,1,&incoming); human_callouts_reset();
+    assert(!human_callouts_nearest_alert(0,&from,&point));
+}
+int main(void) { sight_tests(); damage_tests(); puts("human callout tests passed"); return 0; }

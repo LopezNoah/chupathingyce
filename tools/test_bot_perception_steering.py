@@ -27,7 +27,7 @@ def run(cc, sanitize=False, perception_only=False):
     fixture = (ROOT / "tools/test_bot_perception_steering.c.in").read_text()
     names = ["bot_can_see", "bot_perceive"]
     if not perception_only:
-        names += ["bot_movement_heading_clear", "bot_steer_movement", "bot_keep_moving", "bot_submit_action"]
+        names += ["bot_movement_heading_clear", "bot_steer_movement", "bot_keep_moving", "bot_hear_human_alert", "bot_submit_action"]
     bodies = "\n\n".join(function(source, name) for name in names)
     fixture = fixture.replace("/* PRODUCTION_BODIES */", bodies)
     with tempfile.TemporaryDirectory(prefix="bot-perception-steering-") as directory:

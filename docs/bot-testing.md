@@ -14,8 +14,10 @@ python3 tools/test_surface_navigation.py --sanitize
 python3 tools/test_engine_ai_behavior.py --sanitize
 python3 tools/test_engine_ai_traversal.py --sanitize
 python3 tools/test_bot_movement_log.py
+python3 tools/test_bot_validation_runner.py
 python3 tools/test_bot_awareness_log.py
 python3 tools/test_bot_perception_steering.py --sanitize
+python3 tools/test_human_callouts.py --sanitize
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
   tools/test_engine_ai_fire_control.c source/engine_ai/fire_control.c \
   -o /tmp/test-bot-fire
@@ -53,6 +55,45 @@ file supplies only fixtures/stubs). It checks:
 There is no sneaking behavior. A future stealth behavior may choose a different
 clearance preference, but must not bypass collision safety. These tests verify
 policy and integration ordering, not the game's actual BSP collision routines.
+
+## Implicit human callouts (Team Slayer)
+
+With `configure.py --bots`, `bots.human_callouts = true` is the default.
+Disable it with `HALO_BOT_HUMAN_CALLOUTS=false` or in the isolated config:
+
+```toml
+[bots]
+count = 7
+skill = "spartan"
+human_callouts = true
+```
+
+Local humans (including split-screen teammates) automatically share an enemy's
+last-seen position after **one continuous second** in a conservative cone inside
+that player's actual camera view, within 60 m and with clear LOS. Zoom and pitch
+matter. Looking away, obstruction, camouflage, death/respawn, a team change or a
+missed simulation tick resets acquisition. Fully qualified contacts refresh
+only while visible; bots consume them through the existing shared-awareness
+policy, not as permission to shoot through walls. All difficulties can receive
+human callouts; only Spartans automatically call out their own sightings.
+
+When you take non-silent damage from an enemy, nearby teammate patrol bots
+(within 32 m of you) turn toward the incoming-fire bearing for up to two seconds.
+The cue is an approximate area 8 m from where you were hit, derived from the
+**damage direction**, never the hidden attacker's location or distance. It has
+no enemy identity, does not start firing or hijack combat/retreat/pickups, and
+is allowed even if the attacker is cloaked. Near misses are not detected yet.
+There is no dialogue, ping UI or remote-player callout protocol.
+
+`test_human_callouts.py --sanitize` compiles the real module with fake cameras,
+LOS and damage events. It checks the one-second threshold, loss/reset cases,
+camouflage, zoom/pitch, team isolation, range, directional-only damage cues and
+expiry. Live POV/zoom, split-screen and damage-to-bot-facing validation remain
+manual checks: start the 4v4 fixture, hold an opponent in view, then break LOS;
+look for `bots: human called out enemy ...` and teammates investigating the last
+observed area. After taking a hit, nearby roaming teammates should turn without
+shooting until they acquire an enemy themselves. Existing combat/memory can
+legitimately take priority over a new human callout.
 
 ## Build and offline 4v4 Rat Race match (macOS)
 
@@ -188,11 +229,16 @@ python3 tools/check_bot_navigation_log.py /path/to/match.log --minimum-bots 24
 python3 tools/check_bot_awareness_log.py /path/to/ratrace-4v4.log --require-pursuit
 ```
 
-The checker requires both teams' lane assignments, spread-out lane goals and
-successful patrol routes in at least two lanes per team. It also rejects an
-on-foot bot remaining within 0.5 metres for three consecutive ten-second status
-samples. Vehicle samples are exempt (a gunner/passenger may legitimately stay
-seated). This is sampled evidence, not a guarantee that every tick moves; route
+The full lane checker is for the 24-bot fixture: it requires both teams' lane
+assignments, spread-out goals and successful patrol routes in at least two lanes
+per team. It counts distinct assigned bots, not repeated assignment lines. The
+seven-bot 4v4 fixture cannot populate all three lanes per team; use movement-only
+there rather than treating that structural mismatch as a navigation failure.
+Both modes require sufficient status samples and reject crash/assertion logs.
+An on-foot bot remaining within 0.5 metres **horizontally** for three consecutive
+same-life status samples fails; vertical jumping cannot hide a wall stall.
+Respawns reset the stationary window. Vehicle samples are exempt (a passenger
+may legitimately stay seated). This is sampled evidence, not a guarantee that every tick moves; route
 construction logs do not prove arrival. Navigation failures remain failures,
 even when movement recovery prevents idle bots.
 
@@ -210,12 +256,71 @@ python3 tools/check_bot_opportunity_log.py gunner /path/to/gunner.log
 python3 tools/check_bot_opportunity_log.py weapon /path/to/pickup.log
 ```
 
+## Fresh movement/navigation baseline (2026-10-11)
+
+The PDF comparison and next feature order are in
+[bot-pdf-gap-analysis.md](bot-pdf-gap-analysis.md).
+
+An isolated POSIX/macOS evidence runner (Python 3.11+) creates fresh data/saves,
+symlinks existing legal maps, clears inherited Halo/test overrides, disables
+human callouts for a navigation baseline, and runs hidden/null-renderer:
+
+```sh
+python3 tools/run_bot_validation.py --map ratrace --bots 7 --seconds 75
+python3 tools/run_bot_validation.py --map bloodgulch --bots 24 --seconds 75
+# Run movement-only on either printed game.log; the full lane check is for 24 bots.
+python3 tools/check_bot_navigation_log.py /printed/run/game.log --minimum-bots 7 --movement-only
+```
+
+The runner records `game.log`, isolated `data/debug.txt`, `run.json` (binary hash,
+source commit/dirty flag, settings, exit status), and `trace.json` when available.
+Its exit is not a checker verdict. The watchdog allows five seconds for SIGTERM,
+then SIGKILL, and acts only on its own process group. Keep these local artifacts;
+do not commit proprietary map-derived navigation dumps or copy maps into Git.
+
+Both runs used the current dirty tree on base commit `76648ffd`, Spartan bots,
+Team Slayer, rifle/pistol loadout and human callouts disabled. Both exceeded the
+75-second run deadline, needed watchdog SIGKILL after five seconds of shutdown
+grace, and lasted about 80 wall seconds. No assertion/crash signature was found
+before that deliberate termination. Natural timed shutdown remains unresolved.
+
+Evidence roots under `build/macos/botrun/validation/`:
+
+| Run | Evidence directory | Revised movement check | Navigation result |
+| --- | --- | --- | --- |
+| Rat Race, 7 bots | `ratrace-7bots-20261011T044611-089820Z` | Pass: every bot has 5–7 samples; no detected same-life horizontal stall | 299 published polygons; full three-lane check not applicable to this fixture |
+| Blood Gulch, 24 bots | `bloodgulch-24bots-20261011T044739-391345Z` | Pass: every bot has 4–8 samples; no detected same-life horizontal stall | 2,807 polygons; **fail**: team 0 has only two patrol routes, both in lane 2 |
+
+Search failure counts in captured stdout (patrol and tactical combined):
+
+| Run | no-path | bad-goal | bad-start | stale |
+| --- | ---: | ---: | ---: | ---: |
+| Rat Race | 2,347 | 1,296 | 361 | 1 |
+| Blood Gulch | 10,481 | 2,608 | 100 | 0 |
+
+These passes are sampled evidence, not goal-arrival proof or validation of every
+corner/stair/door. Frequent failures remain real even when recovery keeps bots
+moving. No fresh walking-probe/arrival evidence has been collected yet.
+
+The trace files are **not adequate performance evidence**: the final reports
+retain only 4 Rat Race / 3 Blood Gulch AI ticks and report millions of lost trace
+events in the unpaced null-renderer runs. Do not infer full-run averages or a
+worst-case capsule-probe budget from these snapshots.
+
+Next diagnosis should separate tactical endpoint projection (aim positions versus
+ground-foot goals), static connectivity/capsule-clearance rejection, and transient
+occupants/obstacle revisions. Reproduce these in a one-bot geometry probe before
+changing routing; also establish actual patrol-arrival logging and recheck the
+24-bot fixture. No production navigation policy was changed in this validation
+pass. Checker regressions now cover jumping-in-place, respawn windows and crashes;
+runner tests cover isolation, natural failure and owned-process watchdog cleanup.
+
 ## Still unresolved
 
 - Camouflage and final-steering regression tests pass under ASan/UBSan, and
-  `ninja macos` builds. No new live-match evidence was collected for these
-  changes: recheck corners, narrow doors, ramps/stairs, crouching, moving
-  occupants and recovery in Rat Race and Blood Gulch. The probe horizon is
+  `ninja macos` builds. Fresh sampled movement evidence is recorded above, but
+  controlled geometry acceptance still needs corners, narrow doors, ramps/stairs,
+  crouching, moving occupants and recovery in Rat Race and Blood Gulch. The probe horizon is
   0.65 m; current velocity, ledges and step negotiation are not modeled by the
   steering selector, and stopping in a fully blocked pocket is intentional.
 - Measure capsule-probe cost in a 24/31-bot match before extending the budget.

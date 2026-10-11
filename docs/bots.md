@@ -25,17 +25,25 @@ hosting/listing when running a private test.
 
 A utility selector scores VEHICLE, RETREAT, SCAVENGE, FIGHT and lane PATROL from
 the bot's confidence, target and opportunities. It uses hysteresis to avoid
-thrashing and decides every eight ticks, staggered across bots; Always Be
-Shooting lets combat continue while another behavior moves the bot. Only
-Spartan difficulty currently shares enemy callouts: the host-local blackboard
-keeps the last observed position, and the contact's freshness, distance and bot
-confidence determine whether to investigate it. This is not live tracking or
-hidden information; callouts are logged, not spoken or shown as HUD text.
-Navigation builds walkable BSP surfaces and uses collision-checked routes for
-lane patrol, scavenging and distant pursuit. The spawn graph remains a fallback
-if BSP navigation is unavailable for ten seconds. Three map-relative lanes,
-paired squads and near/far patrol phases keep teammates spread while allowing
-them to rally on a strong nearby contact.
+thrashing and decides every eight ticks, staggered across bots. The combat and
+movement outputs are independent: seeing a distant opponent makes the bot aim,
+choose whether to pursue or retreat, and close distance; it does not fire past
+its skill's fire range or stand still to fire. Only Spartan difficulty currently
+shares enemy callouts: the host-local blackboard keeps the last observed
+position, and the contact's freshness, distance and bot confidence determine
+whether to investigate it. This is not live tracking or hidden information;
+callouts are logged, not spoken or shown as HUD text.
+
+Aim is deliberately imperfect and difficulty-scaled. Error grows with range and
+while moving, then settles as the bot tracks; it never falls to zero. Recruits
+turn slowly, turn worse while moving and drift clumsily instead of stopping to
+shoot. Higher skills strafe more capably; Spartans sometimes crouch-strafe.
+Sight range is separate from fire range, so a target can attract pursuit without
+turning into perfect long-range fire. BSP navigation builds walkable surfaces
+and uses collision-checked routes for lane patrol, scavenging and distant
+pursuit. The spawn graph remains a fallback if BSP navigation is unavailable
+for ten seconds. Three map-relative lanes, paired squads and near/far patrol
+phases keep teammates spread while allowing them to rally on a strong contact.
 
 Weapon input supports automatic fire, slower semi-auto taps, charging/releasing
 against visible shielded targets at medium range, reloads, switching away from
@@ -44,12 +52,24 @@ sight or changed targets. Bots do not deliberately target teammates. There is
 **no teammate-in-the-line-of-fire or grenade blast safety policy**, so enemy-only
 targeting does not imply friendly-fire immunity.
 
-Bots scan up to 256 nearby weapon/vehicle objects once per second. They seek
-usable non-duplicate weapons for empty slots or clear upgrades over their current
-weapon, then use Halo's normal inventory interaction. A nearby upgrade can take
-priority during combat; distant scavenging does not. Better carried weapons are
-selected automatically. Utility is a coarse damage/rate estimate, not a complete
-range-aware loadout strategy.
+Bots scan up to 256 nearby weapon, equipment and vehicle objects once per
+second. Weapons and powerups must be within the bot's sight/field of view (or
+arm's reach) and pass a bounded line-of-sight budget; a last-seen item location
+is remembered for up to 30 seconds, not live-tracked. They seek usable weapons
+for empty slots or clear upgrades, and prefer overshield, camouflage, speed and
+vision; health is useful when hurt. One host-local claim per team and item
+prevents teammates from choosing the same pickup; opposing teams may pursue it
+independently. Claims never reserve the item from a human, who can still race a
+bot. A bot abandons an item it cannot route
+to for 15 seconds before reconsidering it. A nearby upgrade or powerup can take
+priority during combat; distant weapon scavenging does not. Utility is a coarse
+damage/rate estimate, not a complete range-aware loadout strategy.
+
+If a target is visibly observed more than six metres from its last observed
+position within two game ticks, the bot logs a teleport observation and uses
+that ordinary new sighting for chase/retreat utility. It never reads an invisible
+target's live destination. The AI does not yet plan a route through teleporter
+pairs.
 
 Bots seek empty seats in parked ground vehicles and fixed turrets, never evict
 occupants, and prefer a gunner seat when a friendly driver is present. They can
@@ -71,6 +91,8 @@ is not forced.
 
 For the repository executable, a runnable script, all test flags and terminal
 checks, see [Terminal bot tests](bot-testing.md) and `tools/run_bot_match.sh`.
+For a 4v4 Rat Race setup (one host plus seven bots), run
+`BOT_PRESET=4v4 sh tools/run_bot_match.sh`; it is an offline local-host fixture.
 
 In `config.toml`:
 
@@ -123,9 +145,8 @@ remote stand-in machines that mostly stand still. It is not this gameplay AI.
 ## Verification for this milestone
 
 - Native `ninja macos` build passes, including the bot and reusable AI objects.
-- Navigation, behavior-definition and traversal standalone runners pass with
-  sanitizers. Fire-control tests pass with ASan/UBSan: tap spacing, automatic
-  fire, charged hold/release, interrupted charge and return to tapping.
+- Utility, aim/claims, navigation, behavior-definition, traversal and
+  fire-control standalone runners pass with sanitizers.
 - Visible Blood Gulch FFA testing demonstrated movement, combat, kills, deaths
   and respawning. The latest FFA sample ran approximately 46 game seconds.
 - Visible Blood Gulch Team Slayer sample ran 1,350 ticks (45 game seconds):
@@ -173,6 +194,14 @@ python3 tools/check_bot_opportunity_log.py weapon /path/to/pickup.log
 
 Known follow-ups:
 
+- BSP `bad-start`, `bad-goal` and `no-path` searches still prevent full lane
+  coverage; movement recovery is not a route fix.
+- The previous Rat Race smoke log predates claim-release logging, so live claim
+  handoffs after abandonment, death and bot exit remain unverified. Test pickup
+  races across maps and with a human collecting the same item.
+- Aim helper tests pass, but live accuracy and difficulty differences need
+  tuning. Validate visible teleport reacquisition on a teleporter map;
+  teleporter route planning is not implemented.
 - Instrument actual charge/release/projectile events; helper tests do not prove
   that every weapon's runtime charging behavior is correct.
 - Investigate a reported brief movement/jump interruption under two-bot fire.

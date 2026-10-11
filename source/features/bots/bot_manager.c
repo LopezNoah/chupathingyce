@@ -23,6 +23,7 @@ state and never sent to another machine.
 #include "game_engine.h"
 #include "players.h"
 #include "units/units.h"
+#include "engine_ai/claims.h"
 #include "bot_manager.h"
 
 /* port/linux/src/platform.h's */
@@ -47,6 +48,7 @@ static struct
 	short ambition_count;
 	struct bot_ambition ambitions[BOT_AMBITIONS_MAXIMUM];
 	struct bot_sighting sightings[BOT_MANAGER_TEAMS][HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	struct engine_ai_claims item_claims;
 } bot_manager_globals;
 
 /* ---------- private prototypes */
@@ -62,6 +64,7 @@ void bot_manager_reset(
 	short player_index;
 
 	csmemset(&bot_manager_globals, 0, sizeof(bot_manager_globals));
+	engine_ai_claims_reset(&bot_manager_globals.item_claims);
 	for (team_index = 0; team_index < BOT_MANAGER_TEAMS; team_index++)
 	{
 		for (player_index = 0; player_index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; player_index++)
@@ -187,6 +190,80 @@ boolean bot_manager_nearest_sighting(
 	if (position)
 		*position = bot_manager_globals.sightings[team_index][best_index].position;
 	return TRUE;
+}
+
+static boolean bot_manager_claim_scope(
+	long team_index,
+	uint32_t *claim_scope)
+{
+	assert(claim_scope);
+	if (!game_engine_has_teams())
+	{
+		*claim_scope = 0;
+		return TRUE;
+	}
+	if (team_index < 0 || team_index >= BOT_MANAGER_TEAMS)
+		return FALSE;
+	*claim_scope = (uint32_t)team_index;
+	return TRUE;
+}
+
+/* Claims are scoped to a team and keyed by the object's salted datum index. */
+boolean bot_manager_claim_item(
+	long team_index,
+	long object_index,
+	short bot_number,
+	long duration_ticks)
+{
+	long now = game_time_get();
+	uint32_t claim_scope;
+
+	if (object_index == NONE || bot_number <= 0 || duration_ticks <= 0 || now < 0 ||
+		!bot_manager_claim_scope(team_index, &claim_scope))
+		return FALSE;
+	return engine_ai_claims_acquire(&bot_manager_globals.item_claims, claim_scope,
+		(uint32_t)object_index, (uint32_t)bot_number, (uint64_t)now, (uint64_t)duration_ticks);
+}
+
+boolean bot_manager_item_claimed_by_other(
+	long team_index,
+	long object_index,
+	short bot_number)
+{
+	long now = game_time_get();
+	uint32_t claim_scope;
+
+	if (object_index == NONE || bot_number <= 0 || now < 0 ||
+		!bot_manager_claim_scope(team_index, &claim_scope))
+		return FALSE;
+	return engine_ai_claims_held_by_other(&bot_manager_globals.item_claims, claim_scope,
+		(uint32_t)object_index, (uint32_t)bot_number, (uint64_t)now);
+}
+
+void bot_manager_release_item(
+	long team_index,
+	long object_index,
+	short bot_number)
+{
+	uint32_t claim_scope;
+
+	if (object_index == NONE || bot_number <= 0 ||
+		!bot_manager_claim_scope(team_index, &claim_scope))
+		return;
+	engine_ai_claims_release(&bot_manager_globals.item_claims, claim_scope,
+		(uint32_t)object_index, (uint32_t)bot_number);
+}
+
+void bot_manager_release_bot(
+	long team_index,
+	short bot_number)
+{
+	uint32_t claim_scope;
+
+	if (bot_number <= 0 || !bot_manager_claim_scope(team_index, &claim_scope))
+		return;
+	engine_ai_claims_release_owner(&bot_manager_globals.item_claims, claim_scope,
+		(uint32_t)bot_number);
 }
 
 /* ---------- private code: the game modes' adapters */

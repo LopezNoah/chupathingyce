@@ -20,6 +20,12 @@ dependencies. Halo's existing campaign actor AI under `source/ai/` is unchanged.
   stale graph revisions require replanning.
 - `fire_control.*`: automatic fire, tap cadence and bounded charged-shot holds,
   mandatory release ticks, and immediate release on lost firing intent.
+- `aim.*`: a difficulty-owned, nonzero aim-error cone scaled by range, tracking
+  time and movement.
+- `claims.*`: fixed-capacity, independently scoped object claims with expiry,
+  renewal and owner release. Halo uses one scope per team (scope 0 for FFA);
+  claims coordinate teammates, not opponents, and do not reserve objects from
+  humans.
 
 No heap allocation, ECS, timeline, navmesh generation, replicated bot protocol,
 objective policy or weapon selection policy is provided by these modules.
@@ -41,6 +47,8 @@ See [the bot milestone scope and test notes](../../docs/bots.md).
 From the repository root:
 
 ```sh
+python3 tools/test_engine_ai_aim_claims.py --sanitize
+python3 tools/test_engine_ai_utility.py --sanitize
 python3 tools/test_engine_ai_navigation.py --sanitize
 python3 tools/test_surface_navigation.py --sanitize
 python3 tools/test_engine_ai_behavior.py --sanitize

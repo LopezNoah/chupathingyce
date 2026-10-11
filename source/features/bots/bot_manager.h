@@ -94,4 +94,27 @@ boolean bot_manager_nearest_sighting(
 	long *enemy_player_index,
 	real_point3d *position);
 
+/* Item claims (engine_ai/claims.h): one bot per team at a time goes for a
+weapon or powerup. Opposing teams use independent scopes, and claims never
+stop a human from racing the bot to an item. FFA bots share one scope. */
+boolean bot_manager_claim_item(
+	long team_index,
+	long object_index,
+	short bot_number,
+	long duration_ticks);
+
+boolean bot_manager_item_claimed_by_other(
+	long team_index,
+	long object_index,
+	short bot_number);
+
+void bot_manager_release_item(
+	long team_index,
+	long object_index,
+	short bot_number);
+
+void bot_manager_release_bot(
+	long team_index,
+	short bot_number);
+
 #endif /* HALO_BOT_MANAGER_H */

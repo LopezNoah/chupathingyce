@@ -8,11 +8,14 @@ or game assets.
 
 ```sh
 python3 tools/test_engine_ai_utility.py --sanitize
+python3 tools/test_engine_ai_aim_claims.py --sanitize
 python3 tools/test_engine_ai_navigation.py --sanitize
 python3 tools/test_surface_navigation.py --sanitize
 python3 tools/test_engine_ai_behavior.py --sanitize
 python3 tools/test_engine_ai_traversal.py --sanitize
 python3 tools/test_bot_movement_log.py
+python3 tools/test_bot_awareness_log.py
+python3 tools/test_bot_perception_steering.py --sanitize
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
   tools/test_engine_ai_fire_control.c source/engine_ai/fire_control.c \
   -o /tmp/test-bot-fire
@@ -24,6 +27,54 @@ git diff --check
 `--sanitize` enables AddressSanitizer and UndefinedBehaviorSanitizer;
 `--cc clang` selects the compiler on the Python C runners. A successful primitive
 test is not proof of live bot movement.
+
+### Camouflage and final steering seams
+
+`test_bot_perception_steering.py` compiles the real perception, recovery and
+submission functions extracted from `bots.c` against a fake world (the `.c.in`
+file supplies only fixtures/stubs). It checks:
+
+- Active/super camouflage flags and residual fade amounts suppress **new visual
+  acquisition and callouts**, even at two metres. There is no close-range visual
+  exception yet. An earlier sighting remains a frozen last-known position until
+  normal memory expiry; an old teammate callout is likewise a position, not
+  live tracking. A recent attacker record still gives nonvisual awareness,
+  without making that attacker visible or issuing a callout.
+- All on-foot movement is filtered **after stuck recovery, before throttle**.
+  Eight candidate headings and two clearance passes bound this to sixteen
+  capsule sweeps per bot per tick, each with eight collision planes. The live
+  capsule includes crouch height and follows its current support plane uphill.
+  Ordinary movement first prefers 0.12 m of extra wall clearance; retreat
+  initially accepts 0.02 m. Both can fall back to an exact capsule fit. If all
+  probes fail, movement stops rather than submitting a blocked heading.
+- Fake-wall, narrow-passage, boxed-in, uphill and seated/no-move cases, including
+  submission of recovery-generated movement. Vehicle steering is unchanged.
+
+There is no sneaking behavior. A future stealth behavior may choose a different
+clearance preference, but must not bypass collision safety. These tests verify
+policy and integration ordering, not the game's actual BSP collision routines.
+
+## Build and offline 4v4 Rat Race match (macOS)
+
+One local host plus seven bots makes eight Team Slayer players. The script
+balances them 4v4, disables online/public networking, runs the repository
+executable, and defaults this preset to Rat Race:
+
+```sh
+python3 configure.py --bots
+ninja macos
+BOT_PRESET=4v4 BOT_SECONDS=120 sh tools/run_bot_match.sh \
+  > build/macos/botrun/ratrace-4v4.log 2>&1
+```
+
+The previous Rat Race smoke run passed sampled movement for all seven bots
+and logged both weapon and powerup pursuits. That run predates the latest claim
+release logging, so it does not validate release/handoff behavior. The host is
+the eighth player; there is no additional remote player in this offline fixture. Use
+`BOT_HIDDEN_WINDOW=1` for a hidden-window/null-renderer run; it still uses the
+platform's SDL video driver, so Linux windowed runs should use the documented
+Xvfb setup. For the normal 24-bot Blood Gulch run, use the command below
+without `BOT_PRESET`.
 
 ## Build and visible 24-bot match (macOS)
 
@@ -55,17 +106,62 @@ sh tools/run_bot_match.sh
 | `BOT_BINARY` | Repository `build/macos/halo`; override for another built executable |
 | `BOT_DATA_ROOT` | `build/macos/botrun/data`; contains Xbox `maps/` and game log |
 | `BOT_SAVE_ROOT` | `build/macos/botrun/saves`; isolated settings/saves |
-| `BOT_COUNT` | 24; supported bot range 1–31 |
+| `BOT_PRESET` | `24` (Blood Gulch, 24 bots) or `4v4` (Rat Race, 7 bots plus host) |
+| `BOT_MAP` | Map file name; preset default is `bloodgulch` or `ratrace` |
+| `BOT_GAME` | `team_slayer` (default) or `slayer` |
+| `BOT_COUNT` | Preset default; supported bot range 1–31 |
 | `BOT_SKILL` | `spartan`; also `recruit`, `marine`, `odst` |
-| `BOT_SECONDS` | 180; exit timer starts at window creation, not match start |
+| `BOT_LOADOUT` | `rifle_pistol`; Assault Rifle + Magnum |
+| `BOT_SECONDS` | 180; requests an exit after this many seconds. Timed exit did not fire in the latest headless run, so stop headless runs externally |
+| `BOT_HIDDEN_WINDOW` | `1` for hidden-window/null-renderer test runs |
 
-The script sets these game flags:
+The script's `BOT_COUNT` and `BOT_SKILL` override the saved configuration. For a
+normal direct launch, persistent settings live in the save root's `config.toml`.
+For an automatically started offline Rat Race match, merge these sections into
+an **isolated test save root's** config (do not replace your normal config):
+
+```toml
+[bots]
+count = 7
+skill = "spartan"
+
+[network]
+online = false
+public_lobby = false
+host_public = false
+list_hosted_games = false
+report_joined_games = false
+report_events = false
+allow_upnp = false
+
+[debug]
+solo_game = true
+network_test = "host:ratrace:team_slayer"
+network_test_start = 5.0
+network_test_loadout = "rifle_pistol"
+bot_decisions = true
+exit_after = 120.0
+```
+
+Launch that config with the built executable (Xbox maps must be in the data
+root's `maps/`):
+
+```sh
+HALO_DATA_ROOT=/absolute/path/to/test-data \
+HALO_SAVE_ROOT=/absolute/path/to/test-saves build/macos/halo
+```
+
+Environment overrides take precedence; clear stale `HALO_BOTS`, `HALO_BOT_SKILL`
+and `HALO_NETWORK_TEST` overrides when using the config example. Remove the
+`network_test`/`solo_game` test settings when returning to normal play.
+
+The script enables decision logging automatically. The script sets these game flags:
 
 | Flag | Meaning |
 | --- | --- |
 | `HALO_DATA_ROOT`, `HALO_SAVE_ROOT` | Isolate assets/logs and settings/saves |
 | `HALO_SOLO_GAME=1` | Private local-host fixture |
-| `HALO_NETWORK_TEST=host:bloodgulch:team_slayer` | Start Team Slayer automatically |
+| `HALO_NETWORK_TEST=host:<map>:<game>` | Start the selected private match automatically |
 | `HALO_NETWORK_TEST_START=5` | Startup countdown |
 | `HALO_NETWORK_TEST_LOADOUT=rifle_pistol` | Assault Rifle + Magnum |
 | `HALO_BOTS`, `HALO_BOT_SKILL` | Bot count and difficulty |
@@ -74,8 +170,9 @@ The script sets these game flags:
 | `HALO_NET_ONLINE`, `HALO_NET_PUBLIC_LOBBY`, `HALO_NET_HOST_PUBLIC` | Disabled |
 | `HALO_NET_LIST_GAMES`, `HALO_NET_REPORT_GAMES`, `HALO_NET_REPORT_EVENTS`, `HALO_NET_ALLOW_UPNP` | Disabled |
 
-`HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER`, `HALO_NAV_PROBE` and
-`HALO_BOT_SANDBOX` are unset by the script for normal visible gameplay.
+The script sets `HALO_HIDDEN_WINDOW` and `HALO_NULL_RENDERER` only when
+`BOT_HIDDEN_WINDOW=1`; otherwise it clears them. It always unsets
+`HALO_NAV_PROBE`, `HALO_BOT_SANDBOX` and the pickup fixtures for normal runs.
 For manual controlled tests, see [bots.md](bots.md): `HALO_BOT_SANDBOX=1`
 with three bots exercises gunner boarding; `HALO_NETWORK_TEST_PICKUP=5`
 and `HALO_NETWORK_TEST_PICKUP_WEAPON=sniper` exercise pickup.
@@ -88,6 +185,7 @@ and `HALO_NETWORK_TEST_PICKUP_WEAPON=sniper` exercise pickup.
 # Use the fresh match-*.log captured above; debug.txt may contain older runs.
 python3 tools/check_bot_navigation_log.py /path/to/match.log --minimum-bots 24 --movement-only
 python3 tools/check_bot_navigation_log.py /path/to/match.log --minimum-bots 24
+python3 tools/check_bot_awareness_log.py /path/to/ratrace-4v4.log --require-pursuit
 ```
 
 The checker requires both teams' lane assignments, spread-out lane goals and
@@ -97,6 +195,12 @@ samples. Vehicle samples are exempt (a gunner/passenger may legitimately stay
 seated). This is sampled evidence, not a guarantee that every tick moves; route
 construction logs do not prove arrival. Navigation failures remain failures,
 even when movement recovery prevents idle bots.
+
+The awareness checker scopes each claim to its team: it rejects duplicate
+same-team pursuit until a give-up/release event, but permits opposing teams to
+pursue the same world object. New pursuit and release logs carry an explicit
+team; older logs use the bot's team assignment when available. FFA uses one
+shared scope.
 
 Other fixture checkers (use their corresponding three-bot runs, not this 24-bot log):
 
@@ -108,6 +212,18 @@ python3 tools/check_bot_opportunity_log.py weapon /path/to/pickup.log
 
 ## Still unresolved
 
+- Camouflage and final-steering regression tests pass under ASan/UBSan, and
+  `ninja macos` builds. No new live-match evidence was collected for these
+  changes: recheck corners, narrow doors, ramps/stairs, crouching, moving
+  occupants and recovery in Rat Race and Blood Gulch. The probe horizon is
+  0.65 m; current velocity, ledges and step negotiation are not modeled by the
+  steering selector, and stopping in a fully blocked pocket is intentional.
+- Measure capsule-probe cost in a 24/31-bot match before extending the budget.
+  Tune the close-range camouflage exception only after a deliberate design
+  decision; it is currently disabled. Sneaking remains future work.
+- Android validation was attempted, but this configured tree has no `android`
+  Ninja target. Linux/Windows/Android builds remain to be checked; existing
+  `configure_args = --bots` was preserved.
 - The 85-second visible run at `build/macos/botrun/movement-terminal.log`
   passes sampled movement for all 24 bots, including previously stalled Bots 17
   and 18. This only checks positions at ten-second intervals; it does not prove
@@ -116,6 +232,12 @@ python3 tools/check_bot_opportunity_log.py weapon /path/to/pickup.log
 - BSP search still reports `bad-start`, `bad-goal` and `no-path`. The lane checker
   fails: team 1 produced no successful patrol routes in that run. Movement
   recovery is not a BSP route repair; full lane coverage remains unverified.
+- The previous Rat Race log predates claim-release logging. Re-run the
+  awareness checker on a fresh match to validate handoffs after abandonment,
+  death and bot exit.
+- Aim-profile helper tests pass, but accuracy and difficulty differences have
+  not been measured in a live match. Teleport reacquisition also needs a
+  teleporter-map test.
 - A vehicle entry was observed, but driver-to-teammate pickup and boarding has
   not been verified in the latest run. Vehicle obstacle avoidance and good
   driving remain unverified.

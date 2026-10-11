@@ -24,7 +24,11 @@ do, how to run them and how they were tested.
 | Confidence (27) | Bot health, target health, weapons, edge cases, in Lua | `bot_confidence()`: shields and health against the target's, weapon against weapon, enemies seen against teammates near |
 | Reaction-time budget (31–32) | 200–250 ms per decision, 8 bots, 31.25 ms each | A decision every 8 ticks (267 ms at 30 ticks a second), staggered by slot so that 31 bots spread their scoring evenly. The behavior still runs every tick; only the choice waits. A behavior that can no longer run is replaced at once |
 | Hysteresis (34–35) | Inflate the new behavior's utility for a while | The selector adds a bonus to the running behavior that fades over a second, and a newcomer must beat it by a margin |
-| Always Be Shooting (36–37) | Combat is not a behavior the bot must choose | After any leaf that does not fight already, the bot aims and fires at an enemy it can see. Movement comes from the behavior, aim from combat: `bot_submit_action` takes a world-space move, so the two are independent |
+| Always Be Shooting (36–37) | Combat is not a behavior the bot must choose | Aim and movement are independent; a distant sighting selects behavior and closes distance, but the skill's fire range gates shots. `engine_ai/aim.{h,c}` scales a nonzero error cone by range, time tracking and movement |
+| Difficulty and aim | Skill tuning makes harder bots better, not perfect | `bot_skills[]`: recruits turn poorly while moving and drift clumsily; higher skills strafe better, and Spartans crouch-strafe. Sight and fire ranges are separate. Aim settles but retains an error floor |
+| Weapon/powerup awareness | A player remembers visible map pickups | `bot_item_known()` requires sight/FOV or arm's reach and keeps up to eight last-seen locations for 30 seconds. A bounded LOS budget avoids omniscient map scans |
+| Pickup claims | Teammates do not all choose the same pickup | `engine_ai/claims.{h,c}` and the host-local `bot_manager` allow one owner per item within each team; opposing teams have independent scopes and can pursue the same item. Claims expire/release on abandonment. Humans are never blocked from racing a bot |
+| Teleporter sightings | React to a target that reappears far away | A visible jump over 6 m in two ticks is logged as a teleport observation. The normal perception/utility path decides chase or retreat; no invisible destination read or teleporter route is used |
 | Shared awareness (40–43) | Bots of some difficulties share enemies they have seen | Spartan bots call out only enemies they actually see; each team's last-seen position is stored on the host-local blackboard and read by teammates without a target |
 | Awareness overload (41–43) | Shared targets pulled bots off objectives | A shared contact contributes to fight utility through its age, distance and confidence, with a low cap so it cannot pull the whole team off its lane. Objective-mode adapters are not implemented yet, so there is no live objective-vs-contact comparison in the currently supported Slayer modes. |
 | Behavioral simplicity (44–47) | Simple "stand in the zone" beat clever positioning | Objective behaviors walk to the ambition and stay in it, fighting from there (ABS); no positioning heuristics |
@@ -34,6 +38,10 @@ Only Spartan difficulty currently shares contacts. A callout contains an enemy's
 last observed position, not live tracking or hidden information. It is logged
 once per new contact, meaningful movement, or four seconds; the blackboard's
 freshness window expires it. There is no audible dialogue or HUD radio message.
+Pickup memory follows the same rule: bots know only items they can see or have
+seen recently, not a hidden inventory of every map spawn. Claims coordinate
+teammates only; opposing teams have independent claims and callouts. Claims do
+not reserve an item against a player.
 
 ## Decisions
 
@@ -71,13 +79,32 @@ Values are 0 to 1. The table in `bots.c` (`bot_utility_tuning`) holds them:
 | `vehicle` | Fixed, while seated (a seated bot drives, guns or rides; leaving is the leaf's choice) |
 | `retreat` | `(1 − confidence) × shields-down response`, for skills that retreat, out of cooldown; capped |
 | `fight` | By how the target is known: seen, hurt by it, remembered, or a teammate's sighting; times a distance response; raised by confidence. A teammate's sighting is capped low |
-| `scavenge` | The opportunity's value (an empty slot, or the weapon's gain over the held one; a seat), times a distance response; a fixed high score within 2.5 m, regardless of current enemy visibility (ABS continues fighting) |
+| `scavenge` | The opportunity's value (an empty slot, weapon upgrade, powerup or seat), times a distance response; a fixed high score within 2.5 m, regardless of current enemy visibility (ABS continues fighting) |
 | `roam` | A lane-patrol floor: after contact or scavenging stops mattering, the bot routes to its assigned map-relative lane and alternates near/far patrol depths; two bots share a lane as a squad |
 
 Objective behaviors (Phase 2) take their scores from the ambitions: a
 flag carrier's `deliver` is high and rises as the base nears; `guard` rises
 when the team's flag is home and no teammate guards it; `hold` rises when the
 hill is near and empty of teammates.
+
+### Imperfect aim and perception
+
+The aim module returns an error half-angle from skill-owned base error, accurate
+range, settle time and moving penalty. Error grows with distance and movement,
+shrinks as a visible target is tracked, and has a nonzero floor. `fire_range` is
+separate from `sight_range`: a bot can notice and pursue a distant opponent
+without shooting it. Movement remains an independent intent, so even a recruit
+keeps a clumsy drift while aiming instead of freezing to shoot. Spartans
+occasionally crouch during close strafes.
+
+A last-seen weapon or powerup location lasts up to 30 seconds in a per-bot table
+of eight items. A bounded line-of-sight budget limits new observations. The
+host-local item-claim table grants a short exclusive claim to one bot at a time;
+the owner renews it only while the opportunity is relevant. A human's pickup
+still wins normally. If an enemy visibly reappears more than six metres from its
+last observed position within two ticks, it is logged as a teleport observation;
+perception updates through the ordinary sighting path, without reading a hidden
+destination. Teleporter path planning remains future work.
 
 ### Confidence
 
@@ -99,6 +126,9 @@ flashes and how the target took its last hits.
 
 - `engine_ai/utility`: responses, weighted inputs, the selector with cadence,
   hysteresis and a switching margin; standalone test.
+- `engine_ai/aim`: bounded nonzero aim error scaled by distance, tracking time and
+  movement; `engine_ai/claims`: expiring, exclusive item claims. Both have
+  asset-free sanitizer tests.
 - `bots.c`: the priority tree's choice replaced by utility scores; confidence;
   decisions every 8 ticks, staggered; ABS for every leaf; the decision log.
 - `bot_manager.c`: the blackboard, ambitions (the type and API; Slayer

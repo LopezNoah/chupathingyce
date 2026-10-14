@@ -353,6 +353,7 @@ symbols in this file:
 #include "telnet_console.h"
 #include "ui_widget.h"
 #include "editor_stubs.h"
+#include "extensions/extension_api.h" /* port: frame callbacks for opt-in extensions */
 #include "console.h"
 #include "debug_keys.h"
 #include "scenario.h"
@@ -3434,9 +3435,16 @@ void main_loop(
 		event_manager_update();
 		telnet_console_process();
 
+		/* port: editors update every frame, including game-time pauses, before the director */
+		halo_extensions_editor_update((real)main_globals.seconds_elapsed);
+
 		if (!shell_application_is_paused())
 		{
 			render_frame = TRUE;
+
+			/* port: host-local extension updates precede network frame processing */
+			halo_extensions_main_frame_update(main_globals.main_menu_scenario_loaded,
+				(real)main_globals.seconds_elapsed);
 
 			/* automated system link tests (port/linux/game/network_test.c) */
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);

@@ -130,6 +130,7 @@ symbols in this file:
 #include "orbiting_camera.h"
 
 #include "editor/editor_stubs.h"
+#include "extensions/extension_api.h" /* port: host-local editor camera */
 #include "game/players.h"
 #include "input/input.h"
 #include "main/console.h"
@@ -986,6 +987,8 @@ void director_update(
 		if (local_player_get_player_index(local_player_index) != NONE)
 		{
 			boolean switch_camera;
+			boolean editor_reset;
+			void *editor_camera_proc;
 			struct camera_control controls;
 			struct observer_command command;
 			struct director *director = director_get(local_player_index);
@@ -998,6 +1001,17 @@ void director_update(
 				local_player_index,
 				director_globals.initialize_camera,
 				switch_camera);
+			/* port: an active local editor owns this player's camera */
+			if (halo_extensions_editor_director_camera(local_player_index,
+				&editor_camera_proc, &editor_reset))
+			{
+				director->camera_proc = (director_camera_update_proc)editor_camera_proc;
+				csmemset(director->camera_data, 0, sizeof(director->camera_data));
+			}
+			else if (editor_reset)
+			{
+				director_choose_camera(local_player_index, TRUE, FALSE);
+			}
 			director_globals.initialize_camera = FALSE;
 			csmemset(&command, 0, sizeof(command));
 

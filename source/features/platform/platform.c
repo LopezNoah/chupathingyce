@@ -42,6 +42,8 @@ static real test_elapsed;
 static short test_stage;
 /* Process-scoped fixture guard, intentionally not reset with the map. */
 static boolean test_reloaded;
+static boolean test_launch_attempted;
+static real test_launch_elapsed;
 
 static real platform_setting(char const *name, real minimum, real maximum)
 {
@@ -353,10 +355,26 @@ static void platform_test_update(real seconds)
     }
 }
 
+static void platform_test_launch_update(boolean main_menu_loaded, real seconds)
+{
+    if (!config_boolean("debug.platform_test") || !main_menu_loaded ||
+        game_in_progress() || test_launch_attempted ||
+        game_connection() != _game_connection_local || *config_string("debug.network_test")) return;
+    test_launch_elapsed += seconds;
+    if (test_launch_elapsed < 2.0f) return;
+    test_launch_attempted = TRUE;
+    player_spawn_count = 1;
+    game_set_game_variant_from_name("slayer");
+    main_set_map_name("levels\\test\\bloodgulch\\bloodgulch");
+    main_disallow_persistent_storage();
+    platform_log("platform test: launching Blood Gulch as one local Slayer player");
+}
+
 static void platform_update(boolean main_menu_loaded, real seconds)
 {
     long player_index;
     char const *map_name;
+    platform_test_launch_update(main_menu_loaded, seconds);
     if (!main_menu_loaded && game_in_progress()) platform_test_update(seconds);
     if (main_menu_loaded || placement_attempted || !game_in_progress() ||
         !config_boolean("platform.enabled")) return;

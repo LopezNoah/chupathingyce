@@ -97,6 +97,15 @@ python3 -m pytest tools/test_features.py tools/test_platform_shape.py
 ```
 
 `tools/test_glb_reader.py` uses `blender/forge_grid.glb`; generate or supply that
-local fixture first. Live collision testing requires an offline/local game fixture with owned CE
-Xbox-format maps. This foundation branch does not include a dedicated map-launch
-test runner; map files and test assets are not included in the repository.
+local fixture first. The live collision test uses a dedicated one-player local Slayer launcher and
+requires owned CE Xbox-format maps. Map files and binary Blender assets are not
+included in the repository. With `--platform` built, run:
+
+```sh
+python3 tools/test_platform_local.py --maps /path/to/owned/maps
+python3 tools/test_platform_local.py --maps /path/to/owned/maps --disabled
+python3 tools/test_platform_local.py --maps /path/to/owned/maps --asset blender/forge_grid.glb
+```
+
+The enabled test checks that the biped stands on the board before and after one
+map reset. The disabled run verifies that no board or standing fixture is created.

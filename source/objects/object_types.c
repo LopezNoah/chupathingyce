@@ -131,6 +131,7 @@ symbols in this file:
 #include "devices/device_light_fixtures.h"
 #include "devices/devices.h"
 #include "editor/editor_stubs.h"
+#include "extensions/extension_api.h" /* port: host-local editor hooks */
 #include "items/garbage.h"
 #include "items/items.h"
 #include "items/projectiles.h"
@@ -1176,6 +1177,8 @@ void object_types_reconnect_to_structure_bsp(
 	if (!cinematic_in_progress() || !cinematic_globals->suppress_bsp_object_creation)
 	{
 		object_types_place_objects(TRUE);
+		/* port: let editors refresh objects for the connected structure BSP */
+		halo_extensions_structure_bsp_reconnected();
 	}
 
 	return;
@@ -1455,6 +1458,11 @@ long object_type_synchronize(
 			object_index);
 	}
 
+	if (object_index != NONE)
+	{
+		/* port: notify editors after a scenario placement has its final transform */
+		halo_extensions_object_placed_from_scenario(object_index, scenario_object);
+	}
 	return object_index;
 }
 

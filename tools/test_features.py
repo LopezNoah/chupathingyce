@@ -54,6 +54,17 @@ def test_selection(tmp_path, monkeypatch):
     assert Path("source/features/beta/beta.c") in on
 
 
+def test_platform_feature_selection():
+    selected = features.defines(SimpleNamespace(feature_platform=True))
+    assert "-DHALO_FEATURE_PLATFORM" in selected
+    assert "-DHALO_EXTENSION_1=platform" in selected
+    config = {"game": {"root": "source"}}
+    sources = linux_build.game_sources(config, SimpleNamespace(feature_platform=True))
+    assert Path("source/features/platform/platform.c") in sources
+    assert Path("source/features/platform/platform_shape.c") in sources
+    assert "-DHALO_FEATURE_PLATFORM" not in features.defines(SimpleNamespace())
+
+
 def test_drop_in(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     module = Path("source/features/experiment")

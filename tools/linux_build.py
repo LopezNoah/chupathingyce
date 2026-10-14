@@ -557,6 +557,8 @@ def linux32_objects(n: Writer, units: Linux32Units, obj_dir: Path, extra_cflags:
         elif source.name == "posix_ui_font.c":
             # (the overlay's fonts: stb_truetype; their data, tools/embed_assets.py --fonts)
             add_object(source, f"{posix_cflags} -I{STB_DIR}", posix=True)
+        elif source.name == "posix_platform_image.c":
+            add_object(source, f"{posix_cflags} -I{STB_DIR}", posix=True)
         elif source.name.startswith("posix_"):
             add_object(source, posix_cflags, posix=True)
         elif source.name in VERSION_SOURCES:

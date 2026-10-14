@@ -5022,3 +5022,5 @@ HRESULT WINAPI D3DDevice_PersistDisplay(void)
 {
 	return S_OK;
 }
+
+#include "platform_mesh.inc"

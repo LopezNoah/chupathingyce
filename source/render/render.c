@@ -81,6 +81,7 @@ symbols in this file:
 #include "interface/first_person_weapons.h"
 #include "interface/interface.h"
 #include "editor_stubs.h"
+#include "extensions/extension_api.h" /* port: host-local world geometry */
 #include "render_debug.h"
 #include "objects/object_lights_rendering.h"
 #include "effects/particle_systems.h"
@@ -385,6 +386,10 @@ static void render_window(
 		structure_render_reflection_lightmap_masks();
 		structure_render_reflection_mirrors();
 		structure_render_reflections();
+		/* port: draw host-local geometry with the world's opaque geometry */
+#ifdef HALO_EXTENSION_WORLD_GEOMETRY
+		halo_extensions_world_render();
+#endif
 		structure_render_transparent_geometry();
 		structure_render_fog();
 		game_engine_post_rasterize_objects();

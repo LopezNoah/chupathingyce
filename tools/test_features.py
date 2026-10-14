@@ -65,6 +65,16 @@ def test_platform_feature_selection():
     assert "-DHALO_FEATURE_PLATFORM" not in features.defines(SimpleNamespace())
 
 
+def test_forge_feature_selection():
+    selected = features.defines(SimpleNamespace(feature_forge=True))
+    assert "-DHALO_FEATURE_FORGE" in selected
+    assert "-DHALO_EXTENSION_1=forge" in selected
+    forge = next(feature for feature in features.discover() if feature.name == "forge")
+    assert not forge.default
+    assert forge.sources == (Path("port/linux/game/forge.c"),)
+    assert "-DHALO_FEATURE_FORGE" not in features.defines(SimpleNamespace())
+
+
 def test_drop_in(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     module = Path("source/features/experiment")

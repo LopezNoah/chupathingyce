@@ -40,6 +40,6 @@ enum halo_keyboard_action
 /* the actions the keyboard and mouse hold for the player on the controller
 (a bit for each halo_keyboard_action): theirs is the first's; none while a
 menu or the console is up */
-unsigned long halo_keyboard_actions(short controller_index);
+unsigned int halo_keyboard_actions(short controller_index);
 
 #endif

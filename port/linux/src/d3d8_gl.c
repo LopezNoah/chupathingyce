@@ -5024,3 +5024,4 @@ HRESULT WINAPI D3DDevice_PersistDisplay(void)
 }
 
 #include "platform_mesh.inc"
+#include "forge_selector.inc"

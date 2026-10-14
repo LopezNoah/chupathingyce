@@ -1,0 +1,8 @@
+{
+  "name": "infection",
+  "default": false,
+  "order": 30,
+  "help": "Opt-in offline/local Infection rules and adapter",
+  "extension": false,
+  "settings": "settings.inc"
+}

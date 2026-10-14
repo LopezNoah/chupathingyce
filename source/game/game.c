@@ -141,6 +141,9 @@ struct game_options;
 #include "game/cheats.h"
 #include "game/game_allegiance.h"
 #include "game/game_engine.h"
+#ifdef HALO_FEATURE_INFECTION
+#include "features/infection/game_engine_infection.h"
+#endif
 #include "game/player_queues_new.h"
 #include "game/player_rumble.h"
 #include "game/players.h"
@@ -369,6 +372,10 @@ void game_tick(
 	recorded_animations_update();
 	objects_update();
 	players_update_after_game();
+#ifdef HALO_FEATURE_INFECTION
+	/* Resolve queued deaths after this tick's object and player updates. */
+	infection_game_end_tick();
+#endif
 	hud_update();
 	player_effect_update();
 	/* port: and at its end, before the frame draws the lights */

@@ -244,6 +244,9 @@ symbols in this file:
 #include "game.h"
 #include "game/game_globals.h"
 #include "game_engine.h"
+#ifdef HALO_FEATURE_INFECTION
+#include "features/infection/game_engine_infection.h"
+#endif
 #include "input.h"
 #include "interface/hud.h"
 #include "interface/hud_messaging.h"
@@ -4520,6 +4523,10 @@ void players_update_before_game(
 			action = &actions[action_index];
 			/* port: extensions constrain both human and automated input. */
 			halo_extensions_filter_player_action(iterator.datum_index, action);
+#ifdef HALO_FEATURE_INFECTION
+			/* Infection's role and phase restrictions are authoritative. */
+			infection_game_filter_action(iterator.datum_index, action);
+#endif
 			match_assert(
 				"c:\\halo\\SOURCE\\game\\players.c",
 				0x256,

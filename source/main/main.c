@@ -339,6 +339,9 @@ symbols in this file:
 #include "real_math.h"
 #include "game.h"
 #include "game_engine.h"
+#ifdef HALO_FEATURE_INFECTION
+#include "features/infection/game_engine_infection.h"
+#endif
 #include "camera/camera_scripting.h"
 #include "game/cheats.h"
 #include "game/player_control_runtime.h"
@@ -3440,6 +3443,9 @@ void main_loop(
 
 			/* automated system link tests (port/linux/game/network_test.c) */
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
+#ifdef HALO_FEATURE_INFECTION
+			infection_game_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
+#endif
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{

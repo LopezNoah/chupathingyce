@@ -220,6 +220,9 @@ symbols in this file:
 #include "game/cheats.h"
 #include "game/game.h"
 #include "game/game_engine.h"
+#ifdef HALO_FEATURE_INFECTION
+#include "features/infection/game_engine_infection.h"
+#endif
 #include "game/players.h"
 #include "interface/first_person_weapons.h"
 #include "math/periodic_functions.h"
@@ -1089,6 +1092,12 @@ boolean weapon_handle_potential_inventory_item(
 	long item_definition_index = item->definition_index;
 	boolean handled = FALSE;
 	short magazine_index;
+#ifdef HALO_FEATURE_INFECTION
+	/* Ammo merging bypasses the normal item-pickup callback. */
+	if (infection_game_active() &&
+		!infection_game_can_collect_items(weapon->object.owner_player_index))
+		return FALSE;
+#endif
 
 	for (magazine_index = 0; magazine_index<weapon_magazine_count(weapon_definition); ++magazine_index)
 	{

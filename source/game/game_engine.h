@@ -378,6 +378,11 @@ void game_variant_options_default(
 void game_engine_playlist_initialize(
 	void);
 
+#ifdef HALO_FEATURE_INFECTION
+/* Existing map/global loadout resolver used by the local Infection adapter. */
+long game_engine_loadout_weapon_definition(byte weapon);
+#endif
+
 long game_globals_get_weapon(
 	struct game_globals *game_globals,
 	long weapon_list_index);

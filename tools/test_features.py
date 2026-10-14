@@ -61,11 +61,20 @@ def test_bot_feature_selection():
         "-DHALO_FEATURE_SETTINGS_1=bots",
     ]
     assert features.defines(SimpleNamespace(feature_bots=False)) == []
+    infection = features.defines(SimpleNamespace(feature_infection=True))
+    assert infection == [
+        "-DHALO_FEATURE_INFECTION",
+        "-DHALO_FEATURE_SETTINGS_1=infection",
+    ]
     config = {"game": {"root": "source"}}
     enabled = linux_build.game_sources(config, SimpleNamespace(feature_bots=True))
     disabled = linux_build.game_sources(config, SimpleNamespace(feature_bots=False))
     assert Path("source/features/bots/bots.c") in enabled
     assert not any("source/features/bots/" in str(path) for path in disabled)
+    infection_on = linux_build.game_sources(config, SimpleNamespace(feature_infection=True))
+    infection_off = linux_build.game_sources(config, SimpleNamespace(feature_infection=False))
+    assert Path("source/features/infection/infection_rules.c") in infection_on
+    assert not any("source/features/infection/" in str(path) for path in infection_off)
 
 
 def test_drop_in(tmp_path, monkeypatch):

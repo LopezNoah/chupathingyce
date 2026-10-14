@@ -71,8 +71,8 @@ python3 -m pytest tools/test_features.py
 ```
 
 Live tests require owned CE Xbox-format maps at a path supplied to the runner;
-map files and ignored binary Blender assets are not included in the repository.
-With `--platform --forge` built, run:
+map files are not included in the repository. The Blender GLB and selector PNGs
+used by the tests are tracked in `blender/`. With `--platform --forge` built, run:
 
 ```sh
 python3 tools/test_forge_platform_local.py --maps /path/to/owned/maps
@@ -80,6 +80,6 @@ python3 tools/test_forge_platform_local.py --maps /path/to/owned/maps --visual
 python3 tools/test_platform_transparency.py --maps /path/to/owned/maps
 ```
 
-The GLB checks additionally require a local `blender/forge_grid.glb` and, for the
-selector screenshot checks, the two local selector PNGs. The test launcher uses
-isolated save/data directories and does not write into the installed maps.
+The GLB checks use `blender/forge_grid.glb`, and selector screenshot checks use
+the tracked selector PNGs. The test launcher uses isolated save/data directories
+and does not write into the installed maps.

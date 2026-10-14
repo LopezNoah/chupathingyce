@@ -69,9 +69,9 @@ resources are bounded to one asset until exit.
 ## Blender source assets
 
 See [`blender/README.md`](../blender/README.md) for the Forge Grid asset inventory
-and rebuild script. Binary scenes, GLBs and images are intentionally ignored by
-git; supply or generate them locally. No proprietary maps or art are required by
-the asset reader tests. Do not add local binary assets to a feature commit.
+and rebuild script. The Blender scene, GLB fixture, textures and custom Forge
+selector images are tracked so a checkout can run the bounded reader and visual
+tests. Live game tests still require owned CE maps, which are never committed.
 
 ## Scope and limitations
 
@@ -96,10 +96,10 @@ python3 tools/test_glb_reader.py --sanitize
 python3 -m pytest tools/test_features.py tools/test_platform_shape.py
 ```
 
-`tools/test_glb_reader.py` uses `blender/forge_grid.glb`; generate or supply that
-local fixture first. The live collision test uses a dedicated one-player local Slayer launcher and
-requires owned CE Xbox-format maps. Map files and binary Blender assets are not
-included in the repository. With `--platform` built, run:
+`tools/test_glb_reader.py` uses the tracked `blender/forge_grid.glb` fixture. The
+live collision test uses a dedicated one-player local Slayer launcher and
+requires owned CE Xbox-format maps. Map files are not included in the repository.
+With `--platform` built, run:
 
 ```sh
 python3 tools/test_platform_local.py --maps /path/to/owned/maps

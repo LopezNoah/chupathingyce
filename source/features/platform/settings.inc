@@ -3,10 +3,13 @@
         "Optional GLB visual fitted to the board: absolute path, or relative to paths.data.\n"
         "Static first mesh/primitive, embedded PNG/JPEG textures. Collision remains solid.\n"
         "Loaded once on first render; restart to change assets. Empty uses the procedural board." },
+    { "debug.local_test_launch", _config_boolean, "false", "HALO_LOCAL_TEST_LAUNCH", _environment_value, _platform_desktop,
+        "Automated fixtures only: launch one offline local Slayer game on Blood Gulch\n"
+        "from the main menu. Does not teleport the player or reset the map." },
     { "debug.platform_test", _config_boolean, "false", "HALO_PLATFORM_TEST", _environment_value, _platform_desktop,
-        "Automated fixture only: launch offline Blood Gulch, drop the first local\n"
-        "biped onto the board, log its standing height, reset once and repeat.\n"
-        "Starts a local Slayer and teleports the player; leave off for normal play." },
+        "Automated fixture only: drop the first local biped onto the board, log its\n"
+        "standing height after three seconds, reset once and repeat. Starts a local\n"
+        "Slayer when needed and teleports the player; leave off for normal play." },
     { "platform.enabled", _config_boolean, "false", "HALO_PLATFORM_ENABLED", _environment_value, _platform_desktop,
         "One generated solid board in offline Blood Gulch, placed ahead of the first\n"
         "local player. The optional Forge feature can select, move, rotate, copy\n"

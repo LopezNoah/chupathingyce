@@ -53,7 +53,7 @@ def main():
         subprocess.run([str(game)], cwd=root, env=env, stdout=output,
                        stderr=subprocess.STDOUT, check=True, timeout=70)
     text = log.read_text(errors="replace")
-    assert "platform test: launching Blood Gulch as one local Slayer player" in text, "offline game was not launched"
+    assert "local test launcher: launching Blood Gulch as one local Slayer player" in text, "offline game was not launched"
     if args.disabled:
         assert "platform: board at" not in text and "platform test: standing" not in text
     else:
